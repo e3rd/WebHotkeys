@@ -81,7 +81,9 @@ class WebHotkeys {
             "shift": new _Storage("Shift"),
             "letter": new _Storage()
         }
-        this._listen()
+
+        // Start listening
+        document.addEventListener('keydown', e => this.trigger(e), true)
     }
 
     get_info_pairs() {
@@ -160,8 +162,8 @@ class WebHotkeys {
     /**
      * .press(keyCode[, hint], method)
      */
-    pressCtrl(keyCode, hint, method) {
-        return this._press(this._bindings.ctrl, keyCode, hint, method);
+    pressCtrl(keyCode, hint, method, scope) {
+        return this._press(this._bindings.ctrl, keyCode, hint, method, scope)
     }
 
     /**
@@ -197,59 +199,51 @@ class WebHotkeys {
     }
 
     /**
-     * Init listener for any keydowns.
+     * Trigger shortcut if exists
      */
-    _listen() {
-        document.addEventListener('keydown', e => {
-            let s;
-            try {
-                if ([KEY.DOWN, KEY.UP].includes(e.keyCode)
-                    && !e.altKey
-                    && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
-                    && document.activeElement.type !== "checkbox") {
-                    // arrow shortcuts don't work when we are in an input field
-                    return;
-                }
+    trigger(e) {
+        if ([KEY.DOWN, KEY.UP].includes(e.keyCode)
+            && !e.altKey
+            && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
+            && document.activeElement.type !== "checkbox") {
+            // arrow shortcuts don't work when we are in an input field
+            return
+        }
 
-                /** @type {Shortcut|undefined} */
-                let shortcut = (e.altKey ? this._bindings.alt : (e.ctrlKey ? this._bindings.ctrl : (e.shiftKey ? this._bindings.shift : this._bindings.letter)))[e.keyCode];
-                if (shortcut != null) { // shortcut is defined
-                    if (s = shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
-                        // XX scopes should allow negative scope. Ex: down arrow should work unless there is DialogOverlay in the document root.
-                        // How to define this? By a lambda function? By a dictionary {"allowed-scope":, "disallowed":}?
-                        // Plus it should support jQuery object, resolved lazily, at the keystroke time.
-                        // UPDATE: jQuery and lambda works!
-                        let scope = (typeof (jQuery) !== "undefined" && s instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope;
-                        if (!scope) { // scope element is not contained in the page – we can't be focused within the scope
-                            return;
-                        }
-                        if (scope instanceof Function) {
-                            if (!scope()) {
-                                return;
-                            }
-                        } else {
-                            let el = document.activeElement;
-                            while (!el.isSameNode(scope)) {
-                                el = el.parentNode;
-                                if (!el) {
-                                    return; // not allowed scope
-                                }
-                            }
-                        }
+        /** @type {Shortcut|undefined} */
+        const shortcut = (e.altKey ? this._bindings.alt : (e.ctrlKey ? this._bindings.ctrl : (e.shiftKey ? this._bindings.shift : this._bindings.letter)))[e.keyCode];
+        if (shortcut != null) { // shortcut is defined
+            if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
+                // XX scopes should allow negative scope. Ex: down arrow should work unless there is DialogOverlay in the document root.
+                // How to define this? By a lambda function? By a dictionary {"allowed-scope":, "disallowed":}?
+                // Plus it should support jQuery object, resolved lazily, at the keystroke time.
+                // UPDATE: jQuery and lambda works!
+                let scope = (typeof (jQuery) !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
+                if (!scope) { // scope element is not contained in the page – we can't be focused within the scope
+                    return
+                }
+                if (scope instanceof Function) {
+                    if (!scope()) {
+                        return
                     }
-                    let result = shortcut.method.call(this, e.keyCode);
-                    if (result !== false) {//uspesne vykoname akci
-                        if (result != null && result.go != null) {//zkratka obsahuje makro, spustime ho
-                            result.go(e.keyCode);
+                } else {
+                    let el = document.activeElement
+                    while (!el.isSameNode(scope)) {
+                        el = el.parentNode
+                        if (!el) {
+                            return // not allowed scope
                         }
-                        e.preventDefault();// nechceme spustit default akci, stala se jina akce
                     }
                 }
-            } catch (e) {
-                console.error(e);// no shortcut for given key exists
             }
-        }, true);
-
+            let result = shortcut.method.call(this, e.keyCode)
+            if (result !== false) {//uspesne vykoname akci
+                if (result != null && result.go != null) { // we found a macro, run it
+                    result.go(e.keyCode)
+                }
+                return false // prevent default browser action
+            }
+        }
     }
 
     /**
