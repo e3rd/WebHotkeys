@@ -58,34 +58,25 @@ class Shortcut {
      * @returns {KeyState}
      */
     get key_state() {
-        return (this.event.key||this.event.code) + Shortcut.mod_state(this.event)
+        return (this.event.key || this.event.code) + Shortcut.mod_state(this.event)
     }
     /**
      *
      * @param {KeyEvent} e
      * @returns {ModState}
      */
-    static mod_state(e, supress_shift=false) {
+    static mod_state(e, supress_shift = false) {
         // If there ever be a clash between key and code, we might put a list into storage
         // and compare shortcuts like this: [modifiers] = [{key: 1}, {code: Digit1}]
-        return String((supress_shift? 0 : e.shiftKey << 3) | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
-        if (e.code) {
-            return e.code + String(e.shiftKey << 3 | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
-        } else if (/[A-Za-z]/.test(e.key)) {
-            return e.key.toLowerCase() + String(e.shiftKey << 3 | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
-        } else {
-            // We ignore the Shift in the case there is a single key.
-            // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
-            // However, the developper sets the shortcut as "?", not "Shift+?"
-            return e.key + String(e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
-        }
+        return String((supress_shift ? 0 : e.shiftKey << 3) | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
     }
 
     enable() {
-        this.wh._shortcuts[this.key_state] = this
+        return this.wh._shortcuts[this.key_state] = this
     }
     disable() {
         delete this.wh._shortcuts[this.key_state]
+        return this
     }
 }
 
@@ -96,6 +87,9 @@ class WebHotkeys {
     constructor() {
         /**  @type {Object.<KeyState, Shortcut>} */
         this._shortcuts = {}
+
+        /**  @type {Object.<string, Shortcut[]>} */
+        this._groups = {}
 
         // Start listening
         document.addEventListener('keydown', e => this.trigger(e), true)
@@ -108,7 +102,26 @@ class WebHotkeys {
      * @returns {string} Help text to current hotkeys' map.
      */
     getText() {
-        return Object.values(wh._shortcuts).map(shortcut => shortcut.shortcut_text() + ": " + shortcut.hint).join("\n")
+        const enabled = new Set(Object.values(wh._shortcuts))
+        const seen = new Set
+
+        const grouped = Object.entries(wh._groups).map(([name, group]) => {
+            const list = group
+                .filter(shortcut => enabled.has(shortcut)) // filter out disabled shortcuts
+                .map(shortcut => {
+                    seen.add(shortcut);
+                    return `${shortcut.shortcut_text()}: ${shortcut.hint}`
+                })
+            if (list.length) { // if at least one shortcut from a group remains enabled
+                return `\n**${name}**\n` + list.join("\n")
+            }
+        })
+
+        const ungrouped = Object.values(wh._shortcuts)
+            .filter(shortcut => !seen.has(shortcut))
+            .map(shortcut => shortcut.shortcut_text() + ": " + shortcut.hint)
+
+        return [...ungrouped, ...grouped].join("\n")
     }
 
     /**
@@ -144,6 +157,16 @@ class WebHotkeys {
             callback = callback.get(0).click.bind(callback.get(0));
         }
         return shortcut
+    }
+
+    /**
+     * Grab multiple shortcuts at once
+     * @param {string} name Group name
+     * @param {Array} definitions List of grab parameters. Ex: [["Ctrl+c", "Copy", callback], ["Ctrl+v", "Paste", callback]]
+     * @returns
+     */
+    group(name, definitions) {
+        return this._groups[name] = definitions.map(d => this.grab(...d))
     }
 
     /**
@@ -226,9 +249,10 @@ class WebHotkeys {
         /** @type {?Shortcut} */
         // First check whether a `code` shortcut was defined (`Alt+Digit1`).
         // If not, try its `key` property (`Alt+1` (EN) or `Alt++` (CZ)).
-        // If the key is a simple sign and not a simple letter ( -> not affectable by Shift), we ignore the Shift state.
-        // So that we may set `?` shortcut instead of `Shift+?` while the user has to hit Shift before hitting `?`.
-        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)] || this._shortcuts[e.key + Shortcut.mod_state(e, e.key.length === 1 && !/[A-Za-z]/.test(e.key))]
+        // If the key is a one-char but-not-letter sign ( -> not affectable by Shift), we ignore the Shift state.
+        // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
+        // However, the developper sets the shortcut as "?", not "Shift+?"
+        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)] || this._shortcuts[e.key + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]
         if (shortcut) {
             if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
                 const scope = (typeof jQuery !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope

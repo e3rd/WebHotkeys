@@ -6,7 +6,7 @@ Easy solution to integrate keyboard shortcuts into the webpage.
 <script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.7/WebHotkeys.js"></script>
 ```
 
-## Usage
+# Usage
 
 ```javascript
 const wh = new WebHotkeys()
@@ -17,10 +17,20 @@ wh.grab("Enter", "Displays an alert", () => alert("This happens"))
 // wh.grab("Shift+Alt+l", ...
 ```
 
-## Example
+# Example
 See the live [example](https://e3rd.github.io/WebHotkeys/example.html).
 
-## Shortcut syntax
+# Documentation
+
+## `WebHotkeys` object
+
+Start with: `const wh = new WebHotkeys()`
+
+### Method `grab`
+
+Start listening to a shortcut. Specify hint and callback to be triggered on hit. Returns a `Shortcut` object.
+
+#### Shortcut syntax
 
 The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent) on key down and reads its `code`, `key` and modifier properties.
 
@@ -39,6 +49,52 @@ wh.grab("+", "Hint", () => alert("Plus sign hit"))
 wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the shortcut)"))
 wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
 wh.grab("f", "Hint", () => alert("Letter f hit (specified by the `key` property)"))
+```
+
+### Method `group`
+Grab multiple shortcuts at once.
+
+```javascript
+// name, definitions (grab method parameters as a list)
+wh.group("General shortcuts", [
+    ["n", "Next", () => this.nextFrame()],
+    ["p", "Prev", () => this.previousFrame()],
+])
+
+```
+
+### Method `trigger`
+
+Manually trigger a shortcut. Input can be a `KeyboardEvent` (or only some of its properties).
+
+```javascript
+// Simulate hitting Shift+1 shortcut
+wh.grab("Shift+Digit1", "Number 1 shortcut", () => alert("Shift+Number 1 hit"))
+wh.trigger({"code": "Digit1", "shiftKey": true})
+```
+
+### Method `getText`
+Display hints.
+
+## `Shortcut` object
+
+### Method `enabled`
+
+Start listening (by default after calling `wh.grab`). Returns itself.
+
+### Method `disable`
+
+Stop listening. Returns itself.
+
+### Migrate from 0.7 to 0.8
+(Remove the paragraph.)
+
+```
+KEY\.([A-Z]\w+), "\L$1",
+KEY\.([A-Z]), $1
+wh\.press\( wh.grab(
+wh\.pressAlt\(" wh.grab("Alt+
+removed get_info_pairs() 
 ```
 
 # LICENSE
