@@ -1,0 +1,25 @@
+<html>
+
+<head>
+    <script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@latest/WebHotkeys.js"></script>
+</head>
+
+<body>
+    Currently active shortcuts:<br>
+    <script>
+        const wh = new WebHotkeys()
+        wh.grab("Enter", "Displays an alert", () => alert("This happens"))
+        wh.grab("Digit1", "Hint", () => alert("Digit1 key (whatever keyboard layout) hit"))
+        wh.grab("Alt+ArrowDown", "Hint", () => alert("Alt+ArrowDown hit"))
+        wh.grab("KeyF", "Hint", () => alert("Litter f hit (specified by the `code` property)"))
+        wh.grab("2", "Hint", () => alert("Number 2 hit"))
+        wh.grab("+", "Hint", () => alert("Plus sign hit"))
+        wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the shortcut)"))
+        wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
+        wh.grab("g", "Hint", () => alert("Letter g hit (specified by the `key` property)"))
+
+        document.write((wh.getText().split("\n").join("<br>")))
+    </script>
+</body>
+
+</html>

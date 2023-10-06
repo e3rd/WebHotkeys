@@ -1,72 +1,91 @@
 /**
- * XX In the future, replace with event.key|code instead of event.keyCode (which)
- *  Ex: key: +, location: 0, 0 (General keys), which: 49, code: Digit1
- *      (probably use .key for letters and code for Digits)
- *  This will help us to implement '?' shortcut I think.
- * @type {{}}
+ * Like KeyboardEvent but does not have guaranteed to contain all info.
+ * Ex: {"code": "Digit1", "altKey": true} (missing shiftKey)
+ * @typedef {KeyboardEvent} KeyEvent
  */
-const KEY = {
-    N0: 48, N1: 49, N2: 50, N3: 51, N4: 52, N5: 53, N6: 54, N7: 55, N8: 56, N9: 57,
-    Numpad0: 96, Numpad1: 97, Numpad2: 98, Numpad3: 99, Numpad4: 100, Numpad5: 101, Numpad6: 102, Numpad7: 103, Numpad8: 104, Numpad9: 105,
-    DOWN: 40, UP: 38, LEFT: 37, RIGHT: 39, ENTER: 13, SPACE: 32, COMMA: 188, DASH: 189, DOT: 190, ESCAPE: 27,// XX keyDown vs keyPress → this displays wrong chars in help :( ALT: 17,
-    A: 65, B: 66, C: 67, D: 68, E: 69, F: 70, G: 71, H: 72, I: 73, J: 74, K: 75, L: 76,
-    M: 77, N: 78, O: 79, P: 80, Q: 81, R: 82, S: 83, T: 84, U: 85, V: 86, W: 87, X: 88, Y: 89, Z: 90,
-    KP_Add: 107, KP_Subtract: 109,
-    PageUp: 33, PageDown: 34, Home: 36, End: 35
-}
-
-
+/** event.code "Digit1", event.key "1" or whole KeyEvent
+ * @typedef {string|KeyEvent} Key
+ */
 /**
- * Stores shortcuts in the form `storage[keyCode] = { method, hint, scope }`
+ * Scope within the shortcut is allowed to be launched.
+ * The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+ * It can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
+ * (Ex: down arrow should work unless there is DialogOverlay in the document root.)
+ *  @typedef {jQuery|Node|Function} Scope
  */
-class _Storage extends Array {
-    constructor(help_text = "") {
-        super()
-        this._help_text = help_text
-        return this
-    }
-    /**
-     * Generate shortcut text for given keycode
-     * @param {int} keyCode
-     * @returns
-     */
-    shortcut_for(keyCode, append_paranthesis = false) {
-        const pre = this._help_text ? this._help_text + "+" : ""
-        const key = Object.keys(KEY)
-            .find(key => KEY[key] === Number.parseInt(keyCode))
-            ?.replace(/^N(\d)$/, "$1") // 'Alt+N1' -> 'Alt+1'
-        if (append_paranthesis) {
-            return ` (${pre + key})`
-        }
-        return pre + key
-    }
-}
+/**
+ * Key letter combined with modifiers. Just because JS does not support tuple as a key dict.
+ * @typedef {string} KeyState
+ */
+/**
+ * Modifiers as a string. Just because JS does not support tuple as a key dict.
+ * @typedef {string} ModState
+ */
 
 class Shortcut {
     /**
      *
-     * @param {function} method
+     * @param {function} callback
      * @param {string} hint
      * @param {*} scope
-     * @param {_Storage} storage
-     * @param {int} keyCode
+     * @param {KeyEvent} event
+     * @param {WebHotkeys} wh
      */
-    constructor(method, hint, scope, storage, keyCode) {
-        this.method = method
+    constructor(callback, hint, scope, event, wh) {
+        this.callback = callback
         this.hint = hint
         this.scope = scope
-        this.storage = storage
-        this.keyCode = keyCode
+        this.event = event
+        this.wh = wh
         this.enable()
     }
-    shortcut_text(append_paranthesis = false) {
-        return this.storage.shortcut_for(this.keyCode, append_paranthesis)
+
+    /**
+    * Generate shortcut text for given keycode
+    * @param {int} keyCode
+    * @returns {string}
+    */
+    shortcut_text(append_parenthesis = false) {
+        const pre = (this.event.ctrlKey ? "Ctrl+" : "") + (this.event.shiftKey ? "Shift+" : "") + (this.event.altKey ? "Alt+" : "")
+        const key = this.event.key || this.event.code.replace(/^Digit(\d)$/, "$1") // 'Alt+Digit1' -> 'Alt+1'
+        if (append_parenthesis) {
+            return ` (${pre + key})`
+        }
+        return pre + key
     }
+
+    /**
+     * @returns {KeyState}
+     */
+    get key_state() {
+        return (this.event.key||this.event.code) + Shortcut.mod_state(this.event)
+    }
+    /**
+     *
+     * @param {KeyEvent} e
+     * @returns {ModState}
+     */
+    static mod_state(e, supress_shift=false) {
+        // If there ever be a clash between key and code, we might put a list into storage
+        // and compare shortcuts like this: [modifiers] = [{key: 1}, {code: Digit1}]
+        return String((supress_shift? 0 : e.shiftKey << 3) | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
+        if (e.code) {
+            return e.code + String(e.shiftKey << 3 | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
+        } else if (/[A-Za-z]/.test(e.key)) {
+            return e.key.toLowerCase() + String(e.shiftKey << 3 | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
+        } else {
+            // We ignore the Shift in the case there is a single key.
+            // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
+            // However, the developper sets the shortcut as "?", not "Shift+?"
+            return e.key + String(e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
+        }
+    }
+
     enable() {
-        this.storage[this.keyCode] = this
+        this.wh._shortcuts[this.key_state] = this
     }
     disable() {
-        delete this.storage[this.keyCode]
+        delete this.wh._shortcuts[this.key_state]
     }
 }
 
@@ -75,27 +94,12 @@ class Shortcut {
  */
 class WebHotkeys {
     constructor() {
-        this._bindings = {
-            "alt": new _Storage("Alt"),
-            "ctrl": new _Storage("Ctrl"),
-            "shift": new _Storage("Shift"),
-            "letter": new _Storage()
-        }
+        /**  @type {Object.<KeyState, Shortcut>} */
+        this._shortcuts = {}
 
         // Start listening
         document.addEventListener('keydown', e => this.trigger(e), true)
-    }
 
-    get_info_pairs() {
-        const res = [];
-        [this._bindings.letter, this._bindings.alt, this._bindings.ctrl, this._bindings.shift].forEach(storage => {
-            Object.entries(storage).forEach(([keyCode, o]) => {
-                if (keyCode !== "_help_text") { // XX I do not know how to ignore _Storage._help_text while looping
-                    res.push([storage.shortcut_for(keyCode), o])
-                }
-            })
-        })
-        return res
     }
 
     /**
@@ -104,66 +108,73 @@ class WebHotkeys {
      * @returns {string} Help text to current hotkeys' map.
      */
     getText() {
-        return "Current bindings: \n" + this.get_info_pairs().map(([shortcut, method]) => shortcut + ": " + method.hint).join("\n")
+        return Object.values(wh._shortcuts).map(shortcut => shortcut.shortcut_text() + ": " + shortcut.hint).join("\n")
     }
 
     /**
-     * .press(keyCode[, hint], method[, scope])
-     */
-    press(keyCode, hint, method, scope) {
-        return this._press(this._bindings.letter, keyCode, hint, method, scope);
-    }
-
-    /**
-     * .press(keyCode[, hint], method)
-     */
-    pressAlt(keyCode, hint, method, scope) {
-        return this._press(this._bindings.alt, keyCode, hint, method, scope);
-    }
-
-    /**
-     * .press(keyCode[, hint], method)
-     */
-    pressShift(keyCode, hint, method, scope) {
-        return this._press(this._bindings.shift, keyCode, hint, method, scope);
-    }
-
-    /**
-     * .press(keyCode[, hint], method[, scope])
+     * .grab(key, [hint], callback, [scope])
      *
-     * @param {_Storage} storage
-     * @param {type} keyCode
-     * @param {string|function} hint If Fn, this is taken as method parameter.
-     * @param {function|jQuery} method If jQuery, its click method is taken as Fn.
-     * @parem {jQuery|Node} Scope within the shortcut is allowed to be launched.
-     *                      The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+     * @param {Key} key
+     * @param {string|Function} hint If Fn, this is taken as the callback parameter.
+     * @param {Function|jQuery} callback If jQuery, its click method is taken as Fn.
+     * @param {?Scope} scope Scope within the shortcut is allowed to be launched.
+     *   The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
      * @returns {Shortcut}
      */
-    _press(storage, keyCode, hint, method, scope = null) {
+    grab(key, hint, callback, scope = null) {
+        const event = this._parseShortcut(key)
+
+        // juggle optional parameters
         if (typeof hint === "function") {
-            scope = method; // hint (optional parameter) was not used - shift the others
-            method = hint;
-            hint = "";
+            scope = callback // hint (optional parameter) was not used - shift the others
+            callback = hint
+            hint = ""
         }
-        if (typeof (jQuery) !== "undefined" && method instanceof jQuery && method.get(0)) {
+        const shortcut = new Shortcut(callback, hint, scope, event, this)
+
+        if (typeof (jQuery) !== "undefined" && callback instanceof jQuery && callback.get(0)) {
             // append shorcut text to the element (ex: display 'anchor (Alt+1)')
-            if (!method.data("webhotkeys-displayed")) { // append just once
-                method.data("webhotkeys-displayed", true)
-                method.append(storage.shortcut_for(keyCode, true))
+            if (!callback.data("webhotkeys-displayed")) { // append just once
+                callback.data("webhotkeys-displayed", true)
+                callback.append(shortcut.shortcut_text(true))
             }
 
             // getting the click function with the right context
             // (I don't know why, plain method.click.bind(method) didnt work in Chromium 67)
-            method = method.get(0).click.bind(method.get(0));
+            callback = callback.get(0).click.bind(callback.get(0));
         }
-        return new Shortcut(method, hint, scope, storage, keyCode)
+        return shortcut
     }
 
     /**
-     * .press(keyCode[, hint], method)
+     *
+     * @param {string} shortcut Ex: Shift+s or Alt+Shift+Digit1
+     * @returns {KeyEvent}
      */
-    pressCtrl(keyCode, hint, method, scope) {
-        return this._press(this._bindings.ctrl, keyCode, hint, method, scope)
+    _parseShortcut(shortcut) {
+        const modifiers = {
+            "alt": "alt",
+            "shift": "shift",
+            "meta": "meta",
+            "ctrl": "ctrl",
+            "control": "ctrl",
+        }
+        const parts = shortcut.split('+')
+        if (parts[parts.length - 1] === '' && parts[parts.length - 2] === '') { // handle the plus key
+            parts.splice(parts.length - 2, 2, '+') // `Alt++` -> ["Alt", "", ""] -> ["Alt", "+"]
+        }
+        const key = parts.pop() // the last element is the actual key, ex: Shift+Digit1 -> Digit1
+        const event = { [key.length > 1 ? "key" : "code"]: key } // {"key": "KeyF"} | {"code": "f"}
+
+        parts.forEach(part => {
+            const modifier = modifiers[part.toLowerCase()]
+            if (modifier) {
+                event[modifier + "Key"] = true // {"shiftKey": true}
+            } else {
+                console.warn(`Unknown modifier at ${shortcut}`)
+            }
+        })
+        return event
     }
 
     /**
@@ -199,10 +210,12 @@ class WebHotkeys {
     }
 
     /**
-     * Trigger shortcut if exists
+     *
+     * @param {KeyEvent} e
+     * @returns {undefined|boolean}
      */
     trigger(e) {
-        if ([KEY.DOWN, KEY.UP].includes(e.keyCode)
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
             && !e.altKey
             && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
             && document.activeElement.type !== "checkbox") {
@@ -210,15 +223,15 @@ class WebHotkeys {
             return
         }
 
-        /** @type {Shortcut|undefined} */
-        const shortcut = (e.altKey ? this._bindings.alt : (e.ctrlKey ? this._bindings.ctrl : (e.shiftKey ? this._bindings.shift : this._bindings.letter)))[e.keyCode];
-        if (shortcut != null) { // shortcut is defined
+        /** @type {?Shortcut} */
+        // First check whether a `code` shortcut was defined (`Alt+Digit1`).
+        // If not, try its `key` property (`Alt+1` (EN) or `Alt++` (CZ)).
+        // If the key is a simple sign and not a simple letter ( -> not affectable by Shift), we ignore the Shift state.
+        // So that we may set `?` shortcut instead of `Shift+?` while the user has to hit Shift before hitting `?`.
+        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)] || this._shortcuts[e.key + Shortcut.mod_state(e, e.key.length === 1 && !/[A-Za-z]/.test(e.key))]
+        if (shortcut) {
             if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
-                // XX scopes should allow negative scope. Ex: down arrow should work unless there is DialogOverlay in the document root.
-                // How to define this? By a lambda function? By a dictionary {"allowed-scope":, "disallowed":}?
-                // Plus it should support jQuery object, resolved lazily, at the keystroke time.
-                // UPDATE: jQuery and lambda works!
-                let scope = (typeof (jQuery) !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
+                const scope = (typeof jQuery !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
                 if (!scope) { // scope element is not contained in the page – we can't be focused within the scope
                     return
                 }
@@ -236,13 +249,16 @@ class WebHotkeys {
                     }
                 }
             }
-            let result = shortcut.method.call(this, e.keyCode)
-            if (result !== false) {//uspesne vykoname akci
+            const result = shortcut.callback.call(this)
+            if (result !== false) {// custom method suceeded
+                // XX rather than checking "go", use instanceof _List
                 if (result != null && result.go != null) { // we found a macro, run it
-                    result.go(e.keyCode)
+                    result.go(e.code)
                 }
-                return false // prevent default browser action
             }
+            // prevent default behaviour (ex: Ctrl+L going to the address bar)
+            e.stopPropagation()
+            e.preventDefault()
         }
     }
 
@@ -352,8 +368,8 @@ class _List {
         const f = function (e) {
             return this._list.go(e);
         };
-        this._wh.press(KEY.UP, "Lists up", f);
-        this._wh.press(KEY.DOWN, "Lists down", f);
+        this._wh.grab("ArrowUp", "Lists up", f);
+        this._wh.grab("ArrowDown", "Lists down", f);
         return this;
     }
 
@@ -432,9 +448,15 @@ class _List {
         }
     }
 
-    go(keyCode, steps) {
+    /**
+     *
+     * @param {string} code KeyboardEvent.code
+     * @param {int} steps
+     * @returns
+     */
+    go(code, steps) {
         if (this._loadSiblings(steps)) {
-            let el = [KEY.DOWN, KEY.KP_Add].includes(keyCode) ? this.next : this.prev;
+            let el = ["ArrowDown", "NumpadAdd"].includes(code) ? this.next : this.prev;
             return this._change(el, this.selected);
         } else {
             return false;
