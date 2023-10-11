@@ -78,10 +78,35 @@ class Shortcut {
         delete this.wh._shortcuts[this.key_state]
         return this
     }
+    isEnabled() {
+        return this.wh._shortcuts[this.key_state] === this
+    }
+    toggle(enable = null) {
+        enable === null && !this.isEnabled() || enable ? this.enable() : this.disable()
+        return this
+    }
 }
 
 /**
- * Interface pro vsechny stranky se zkratkami
+ * @extends {Array<Shortcut>}
+ */
+class ShortcutGroup extends Array {
+    enable() {
+        this.forEach(shortcut => shortcut.enable())
+        return this
+    }
+    disable() {
+        this.forEach(shortcut => shortcut.disable())
+        return this
+    }
+    toggle(enable = null) {
+        this.forEach(shortcut => shortcut.toggle(enable))
+        return this
+    }
+}
+
+/**
+ * Main interface to define shortcuts
  */
 class WebHotkeys {
     constructor() {
@@ -93,11 +118,9 @@ class WebHotkeys {
 
         // Start listening
         document.addEventListener('keydown', e => this.trigger(e), true)
-
     }
 
     /**
-     * XX group by scopes
      * XX if there are a lot of them, they are not displayed in the alert text
      * @returns {string} Help text to current hotkeys' map.
      */
@@ -130,6 +153,7 @@ class WebHotkeys {
      * @param {Key} key
      * @param {string|Function} hint If Fn, this is taken as the callback parameter.
      * @param {Function|jQuery} callback If jQuery, its click method is taken as Fn.
+     *  If callback returns false, shortcut will be treated as non-existent and event will propagate further.
      * @param {?Scope} scope Scope within the shortcut is allowed to be launched.
      *   The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
      * @returns {Shortcut}
@@ -166,7 +190,7 @@ class WebHotkeys {
      * @returns
      */
     group(name, definitions) {
-        return this._groups[name] = definitions.map(d => this.grab(...d))
+        return this._groups[name] = new ShortcutGroup(...definitions).map(d => this.grab(...d))
     }
 
     /**
@@ -276,13 +300,15 @@ class WebHotkeys {
             const result = shortcut.callback.call(this)
             if (result !== false) {// custom method suceeded
                 // XX rather than checking "go", use instanceof _List
+                // XX Or event better, maybe these liner are not needed anymore.
                 if (result != null && result.go != null) { // we found a macro, run it
                     result.go(e.code)
                 }
+
+                // prevent default behaviour (ex: Ctrl+L going to the address bar)
+                e.stopPropagation()
+                e.preventDefault()
             }
-            // prevent default behaviour (ex: Ctrl+L going to the address bar)
-            e.stopPropagation()
-            e.preventDefault()
         }
     }
 

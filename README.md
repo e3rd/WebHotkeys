@@ -52,15 +52,18 @@ wh.grab("f", "Hint", () => alert("Letter f hit (specified by the `key` property)
 ```
 
 ### Method `group`
-Grab multiple shortcuts at once.
+Grab multiple shortcuts at once. Returns a `ShortcutGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
 
 ```javascript
 // name, definitions (grab method parameters as a list)
-wh.group("General shortcuts", [
+const general = wh.group("General shortcuts", [
     ["n", "Next", () => this.nextFrame()],
     ["p", "Prev", () => this.previousFrame()],
 ])
 
+general.disable() // disable all shortcuts
+general.toggle() // re-enable them
+general.toggle(false) // re-disable them
 ```
 
 ### Method `trigger`
