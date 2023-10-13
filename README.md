@@ -22,34 +22,43 @@ See the live [example](https://e3rd.github.io/WebHotkeys/example.html).
 
 # Documentation
 
+The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent) on key down and reads its `code`, `key` and modifier properties.
+
 ## `WebHotkeys` object
 
 Start with: `const wh = new WebHotkeys()`
 
 ### Method `grab`
 
-Start listening to a shortcut. Specify hint and callback to be triggered on hit. Returns a `Shortcut` object.
+Start listening to a shortcut. Specify hint and callback to be triggered on hit. Returns a `Shortcut` object. It accepts following parameters:
 
-#### Shortcut syntax
+* `shortcut`
+    Key combination to be grabbed. Either use any `code` value https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values of the event:
 
-The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent) on key down and reads its `code`, `key` and modifier properties.
+    ```javascript
+    wh.grab("Digit1", "Hint", () => alert("Digit1 key (whatever keyboard layout) hit"))
+    wh.grab("Alt+ArrowDown", "Hint", () => alert("Alt+ArrowDown hit"))
+    wh.grab("KeyF", "Hint", () => alert("Litter f hit (specified by the `code` property)"))
+    ```
 
-Either use any `code` value https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values of the event:
+    Or use any `key` value
+    ```javascript
+    wh.grab("1", "Hint", () => alert("Number 1 hit"))
+    wh.grab("+", "Hint", () => alert("Plus sign hit"))
+    wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the shortcut)"))
+    wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
+    wh.grab("f", "Hint", () => alert("Letter f hit (specified by the `key` property)"))
+    ```
 
-```javascript
-wh.grab("Digit1", "Hint", () => alert("Digit1 key (whatever keyboard layout) hit"))
-wh.grab("Alt+ArrowDown", "Hint", () => alert("Alt+ArrowDown hit"))
-wh.grab("KeyF", "Hint", () => alert("Litter f hit (specified by the `code` property)"))
-```
+    If you define both `code` and `key`, the `code` has the precedence.
 
-Or use any `key` value
-```javascript
-wh.grab("1", "Hint", () => alert("Number 1 hit"))
-wh.grab("+", "Hint", () => alert("Plus sign hit"))
-wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the shortcut)"))
-wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
-wh.grab("f", "Hint", () => alert("Letter f hit (specified by the `key` property)"))
-```
+    If multiple shortcuts are defined, only the first one is executed.
+
+    Some special shortcuts like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
+* `hint`: Help text.
+* `callback`: If callback returns false, shortcut will be treated as non-existent and event will propagate further. If callback is jQuery, its click method is taken instead.
+* `scope`: Scope within the shortcut is allowed to be launched. The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+
 
 ### Method `group`
 Grab multiple shortcuts at once. Returns a `ShortcutGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
@@ -66,14 +75,17 @@ general.toggle() // re-enable them
 general.toggle(false) // re-disable them
 ```
 
-### Method `trigger`
+### Method `simulate`
 
-Manually trigger a shortcut. Input can be a `KeyboardEvent` (or only some of its properties).
+Manually trigger a shortcut.
 
 ```javascript
 // Simulate hitting Shift+1 shortcut
 wh.grab("Shift+Digit1", "Number 1 shortcut", () => alert("Shift+Number 1 hit"))
-wh.trigger({"code": "Digit1", "shiftKey": true})
+wh.simulate("Shift+Digit1")
+
+// You can include KeyEvent object or its part too
+wh.simulate( { shiftKey: true, code: "Digit1" })
 ```
 
 ### Method `getText`
@@ -97,7 +109,7 @@ KEY\.([A-Z]\w+), "\L$1",
 KEY\.([A-Z]), $1
 wh\.press\( wh.grab(
 wh\.pressAlt\(" wh.grab("Alt+
-removed get_info_pairs() 
+removed get_info_pairs()
 ```
 
 # LICENSE

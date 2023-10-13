@@ -3,8 +3,8 @@
  * Ex: {"code": "Digit1", "altKey": true} (missing shiftKey)
  * @typedef {KeyboardEvent} KeyEvent
  */
-/** event.code "Digit1", event.key "1" or whole KeyEvent
- * @typedef {string|KeyEvent} Key
+/** event.code "Digit1", event.key "1" or a combination with a modifier "Ctrl+Digit1"
+ * @typedef {string} Key
  */
 /**
  * Scope within the shortcut is allowed to be launched.
@@ -37,6 +37,7 @@ class Shortcut {
         this.scope = scope
         this.event = event
         this.wh = wh
+        this.enabled = true
         this.enable()
     }
 
@@ -60,6 +61,7 @@ class Shortcut {
     get key_state() {
         return (this.event.key || this.event.code) + Shortcut.mod_state(this.event)
     }
+
     /**
      *
      * @param {KeyEvent} e
@@ -72,17 +74,18 @@ class Shortcut {
     }
 
     enable() {
-        return this.wh._shortcuts[this.key_state] = this
-    }
-    disable() {
-        delete this.wh._shortcuts[this.key_state]
+        this.enabled = true
+        if (!this.wh._shortcuts[this.key_state]?.includes(this)) {
+            (this.wh._shortcuts[this.key_state] ||= []).unshift(this)
+        }
         return this
     }
-    isEnabled() {
-        return this.wh._shortcuts[this.key_state] === this
+    disable() {
+        this.enabled = false
+        return this
     }
     toggle(enable = null) {
-        enable === null && !this.isEnabled() || enable ? this.enable() : this.disable()
+        enable === null && !this.enabled || enable ? this.enable() : this.disable()
         return this
     }
 }
@@ -110,14 +113,14 @@ class ShortcutGroup extends Array {
  */
 class WebHotkeys {
     constructor() {
-        /**  @type {Object.<KeyState, Shortcut>} */
+        /**  @type {Object.<KeyState, Array<Shortcut>>} */
         this._shortcuts = {}
 
         /**  @type {Object.<string, Shortcut[]>} */
         this._groups = {}
 
         // Start listening
-        document.addEventListener('keydown', e => this.trigger(e), true)
+        document.addEventListener('keydown', e => this._trigger(e), true)
     }
 
     /**
@@ -125,14 +128,15 @@ class WebHotkeys {
      * @returns {string} Help text to current hotkeys' map.
      */
     getText() {
-        const enabled = new Set(Object.values(wh._shortcuts))
+        const all = Object.values(wh._shortcuts).flat().filter(s => s.enabled)
+        const enabled = new Set(all)
         const seen = new Set
 
         const grouped = Object.entries(wh._groups).map(([name, group]) => {
             const list = group
                 .filter(shortcut => enabled.has(shortcut)) // filter out disabled shortcuts
                 .map(shortcut => {
-                    seen.add(shortcut);
+                    seen.add(shortcut)
                     return `${shortcut.shortcut_text()}: ${shortcut.hint}`
                 })
             if (list.length) { // if at least one shortcut from a group remains enabled
@@ -140,26 +144,26 @@ class WebHotkeys {
             }
         })
 
-        const ungrouped = Object.values(wh._shortcuts)
+        const ungrouped = all
             .filter(shortcut => !seen.has(shortcut))
             .map(shortcut => shortcut.shortcut_text() + ": " + shortcut.hint)
 
-        return [...ungrouped, ...grouped].join("\n")
+        return [...ungrouped, ...grouped].join("\n").trim()
     }
 
     /**
      * .grab(key, [hint], callback, [scope])
      *
-     * @param {Key} key
+     * @param {Key} shortcut
      * @param {string|Function} hint If Fn, this is taken as the callback parameter.
-     * @param {Function|jQuery} callback If jQuery, its click method is taken as Fn.
-     *  If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+     * @param {Function|jQuery} callback If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+     *   If callback is jQuery, its click method is taken instead.
      * @param {?Scope} scope Scope within the shortcut is allowed to be launched.
      *   The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
      * @returns {Shortcut}
      */
-    grab(key, hint, callback, scope = null) {
-        const event = this._parseShortcut(key)
+    grab(shortcut, hint, callback, scope = null) {
+        const event = this._parseShortcut(shortcut)
 
         // juggle optional parameters
         if (typeof hint === "function") {
@@ -167,20 +171,20 @@ class WebHotkeys {
             callback = hint
             hint = ""
         }
-        const shortcut = new Shortcut(callback, hint, scope, event, this)
+        const _shortcut = new Shortcut(callback, hint, scope, event, this)
 
         if (typeof (jQuery) !== "undefined" && callback instanceof jQuery && callback.get(0)) {
             // append shorcut text to the element (ex: display 'anchor (Alt+1)')
             if (!callback.data("webhotkeys-displayed")) { // append just once
                 callback.data("webhotkeys-displayed", true)
-                callback.append(shortcut.shortcut_text(true))
+                callback.append(_shortcut.shortcut_text(true))
             }
 
             // getting the click function with the right context
             // (I don't know why, plain method.click.bind(method) didnt work in Chromium 67)
             callback = callback.get(0).click.bind(callback.get(0));
         }
-        return shortcut
+        return _shortcut
     }
 
     /**
@@ -195,7 +199,7 @@ class WebHotkeys {
 
     /**
      *
-     * @param {string} shortcut Ex: Shift+s or Alt+Shift+Digit1
+     * @param {Key} shortcut Ex: Shift+s or Alt+Shift+Digit1
      * @returns {KeyEvent}
      */
     _parseShortcut(shortcut) {
@@ -261,8 +265,8 @@ class WebHotkeys {
      * @param {KeyEvent} e
      * @returns {undefined|boolean}
      */
-    trigger(e) {
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+    _trigger(e) {
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
             && !e.altKey
             && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
             && document.activeElement.type !== "checkbox") {
@@ -276,7 +280,7 @@ class WebHotkeys {
         // If the key is a one-char but-not-letter sign ( -> not affectable by Shift), we ignore the Shift state.
         // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
         // However, the developper sets the shortcut as "?", not "Shift+?"
-        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)] || this._shortcuts[e.key + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]
+        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)]?.find(s => s.enabled) || this._shortcuts[e.key + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]?.find(s => s.enabled)
         if (shortcut) {
             if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
                 const scope = (typeof jQuery !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
@@ -306,10 +310,18 @@ class WebHotkeys {
                 }
 
                 // prevent default behaviour (ex: Ctrl+L going to the address bar)
-                e.stopPropagation()
-                e.preventDefault()
+                e.stopPropagation?.() // the method may not be available in a crafted  event
+                e.preventDefault?.()
             }
         }
+    }
+
+    /**
+     *
+     * @param {Key|KeyEvent} shortcut
+     */
+    simulate(shortcut) {
+        this._trigger(shortcut.constructor === String ? this._parseShortcut(shortcut) : shortcut)
     }
 
     /**
