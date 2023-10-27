@@ -266,8 +266,12 @@ class WebHotkeys {
      * @returns {undefined|boolean}
      */
     _trigger(e) {
-        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
-            && !e.altKey
+        if (!e.altKey
+            && !e.metaKey
+            && (
+                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
+                || !e.ctrlKey
+            )
             && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
             && document.activeElement.type !== "checkbox") {
             // arrow shortcuts don't work when we are in an input field
@@ -279,8 +283,11 @@ class WebHotkeys {
         // If not, try its `key` property (`Alt+1` (EN) or `Alt++` (CZ)).
         // If the key is a one-char but-not-letter sign ( -> not affectable by Shift), we ignore the Shift state.
         // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
-        // However, the developper sets the shortcut as "?", not "Shift+?"
-        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)]?.find(s => s.enabled) || this._shortcuts[e.key + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]?.find(s => s.enabled)
+        // However, the developper sets the shortcut as "?", not "Shift+?".
+        // If the key is a one-char upper-letter ( -> for sure affected by Shift), we convert it to the lower case.
+        // Ex: Grabbed combination "Shift+Alt+l" would always produce "Shift+Alt+L".
+        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)]?.find(s => s.enabled)
+            || this._shortcuts[(e.key?.length === 1 && /[A-Z]/.test(e.key) ? e.key.toLowerCase() : e.key) + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]?.find(s => s.enabled)
         if (shortcut) {
             if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
                 const scope = (typeof jQuery !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
