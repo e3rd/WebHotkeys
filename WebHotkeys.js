@@ -268,7 +268,9 @@ class WebHotkeys {
     _trigger(e) {
         if (!e.altKey
             && !e.metaKey
-            && (
+            && (e.key !== e.code // Escape, F1... anticipate a shortcut
+                || ["Delete", "Backspace", "Tab"].includes(e.key)) // except it is a text editing key
+            && ( // Ctrl without Arrows anticipates a shortcut
                 ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
                 || !e.ctrlKey
             )
