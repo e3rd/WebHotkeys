@@ -7,11 +7,7 @@
  * @typedef {string} Key
  */
 /**
- * Scope within the shortcut is allowed to be launched.
- * The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
- * It can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
- * (Ex: down arrow should work unless there is DialogOverlay in the document root.)
- *  @typedef {jQuery|Node|Function} Scope
+ *  @typedef {HTMLElement|Function|jQuery} Target
  */
 /**
  * Key letter combined with modifiers. Just because JS does not support tuple as a key dict.
@@ -22,12 +18,14 @@
  * @typedef {string} ModState
  */
 
+const FORM_TAGS = ["INPUT", "SELECT", "TEXTAREA"]
+
 class Shortcut {
     /**
      *
      * @param {function} callback
      * @param {string} hint
-     * @param {*} scope
+     * @param {Target} scope
      * @param {KeyEvent} event
      * @param {WebHotkeys} wh
      */
@@ -124,6 +122,24 @@ class WebHotkeys {
     }
 
     /**
+     * Grabs all [data-shortcut] elements. Puts its title as a help text.
+     * @param {boolean} grab_f1 Put basic help text under F1
+     * @returns {WebHotkeys}
+     */
+    init(grab_f1 = true) {
+        document.querySelectorAll("[data-shortcut]").forEach(el => this.grab(
+            el.getAttribute("data-shortcut"),
+            el.getAttribute("title"),
+            () => FORM_TAGS.includes(el.tagName) ? el.focus() : el.click())
+        )
+
+        if (grab_f1) {
+            this.grab("F1", "Help", () => alert(this.getText()))
+        }
+        return this
+    }
+
+    /**
      * XX if there are a lot of them, they are not displayed in the alert text
      * @returns {string} Help text to current hotkeys' map.
      */
@@ -156,10 +172,15 @@ class WebHotkeys {
      *
      * @param {Key} shortcut
      * @param {string|Function} hint If Fn, this is taken as the callback parameter.
-     * @param {Function|jQuery} callback If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+     * @param {Target} callback  What will happen on shortcut trigger.
+     *   If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+     *   If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
      *   If callback is jQuery, its click method is taken instead.
-     * @param {?Scope} scope Scope within the shortcut is allowed to be launched.
-     *   The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+     * @param {?Target} scope Scope within the shortcut is allowed to be launched.
+     *  The scope can be an HTMLElement that the active element is being search under when the shortcut triggers.
+     *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
+     *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
+     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
      * @returns {Shortcut}
      */
     grab(shortcut, hint, callback, scope = null) {
@@ -182,7 +203,9 @@ class WebHotkeys {
 
             // getting the click function with the right context
             // (I don't know why, plain method.click.bind(method) didnt work in Chromium 67)
-            callback = callback.get(0).click.bind(callback.get(0));
+            _shortcut.callback = callback.get(0).click.bind(callback.get(0))
+        } else if (callback instanceof HTMLElement) {
+            _shortcut.callback = () => FORM_TAGS.includes(callback.tagName) ? callback.focus() : callback.click()
         }
         return _shortcut
     }
@@ -274,7 +297,7 @@ class WebHotkeys {
                 ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
                 || !e.ctrlKey
             )
-            && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)
+            && FORM_TAGS.includes(document.activeElement.tagName)
             && document.activeElement.type !== "checkbox") {
             // arrow shortcuts don't work when we are in an input field
             return

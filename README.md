@@ -3,7 +3,7 @@
 Easy solution to integrate keyboard shortcuts into the webpage.
 
 ```javascript
-<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.7/WebHotkeys.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.0/WebHotkeys.js"></script>
 ```
 
 # Usage
@@ -17,6 +17,16 @@ wh.grab("Enter", "Displays an alert", () => alert("This happens"))
 // wh.grab("Shift+Alt+l", ...
 ```
 
+OR
+
+```html
+<a href="..." data-shortcut="Ctrl+Enter" title="Help text">link</a>
+```
+
+```javascript
+new WebHotkeys().init()  // grabs all [data-shortcut] elements
+```
+
 # Example
 See the live [example](https://e3rd.github.io/WebHotkeys/example.html).
 
@@ -28,11 +38,24 @@ The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/
 
 Start with: `const wh = new WebHotkeys()`
 
+### Method `init`
+
+Grabs all [data-shortcut] elements. Puts its title as a help text. Returns self.
+
+```html
+<a href="..." data-shortcut="Alt+1" title="Go to an example link 1">link 1</a>
+<a href="..." data-shortcut="Alt+2" title="Go to an example link 2">link 2</a>
+```
+
+```javascript
+new WebHotkeys().init()
+```
+
 ### Method `grab`
 
 Start listening to a shortcut. Specify hint and callback to be triggered on hit. Returns a `Shortcut` object. It accepts following parameters:
 
-* `shortcut`
+* `shortcut` (`string`)
     Key combination to be grabbed. Either use any `code` value https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values of the event:
 
     ```javascript
@@ -55,9 +78,16 @@ Start listening to a shortcut. Specify hint and callback to be triggered on hit.
     If multiple shortcuts are defined, only the first one is executed.
 
     Some special shortcuts like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
-* `hint`: Help text.
-* `callback`: If callback returns false, shortcut will be treated as non-existent and event will propagate further. If callback is jQuery, its click method is taken instead.
-* `scope`: Scope within the shortcut is allowed to be launched. The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+* `hint` (`string`): Help text.
+* `callback` (`{HTMLElement|Function|jQuery}`): What will happen on shortcut trigger.
+     *  If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+     *  If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
+     *  If callback is jQuery, its click method is taken instead.
+* `scope` (`{HTMLElement|Function|jQuery}`): Scope within the shortcut is allowed to be launched.
+     *  The scope can be an HTMLElement that the active element is being search under when the shortcut triggers.
+     *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
+     *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
+     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
 
 
 ### Method `group`
