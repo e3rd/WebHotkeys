@@ -6,9 +6,15 @@
  * @property {boolean} [replaceAccesskeys=true] If true, [accesskey] elements will be converted to shortcuts.
  * @property {boolean} [observe=true] Monitors DOM changes. Automatically un/grab shortcuts as DOM elements with the given selector dis/appear.
  * @property {string} [selector='data-shortcut']  Attribute name to link DOM elements to shorcuts.
+ * @property {string} [selectorGroup='data-shortcut-group']  Attribute name to link DOM elements to shorcut groups.
+ * @property {string|boolean} [hint='title'] Values: 'title', 'text', false. Append shorcut text to the element title (ex: 'anchor (Alt+1)') or its text (or its label for the case of a form element). (TODO docs)
  *
  */
-const WebHotkeysDefaults = { replaceAccesskeys: true, grabF1: true, selector: "data-shortcut", observe: true }
+const WebHotkeysDefaults = {
+    replaceAccesskeys: true, grabF1: true,
+    selector: "data-shortcut", selectorGroup: 'data-shortcut-group',
+    observe: true, hint: "title"
+}
 
 /**
  * Like KeyboardEvent but does not have guaranteed to contain all info.
@@ -136,7 +142,7 @@ class WebHotkeys {
         //
         // Definitions
         //
-        options = { ...WebHotkeysDefaults, ...options }
+        options = this.options = { ...WebHotkeysDefaults, ...options }
 
         /**  @type {Object.<KeyState, Array<Shortcut>>} */
         this._shortcuts = {}
@@ -155,10 +161,7 @@ class WebHotkeys {
          */
         const eligible = el => el.getAttribute?.(options.selector)?.length
         /** @param {HTMLElement} el Grab the element's [data-shortcut] attribute */
-        const grab = el => this._dom.set(el, this.grab(
-            el.getAttribute(options.selector),
-            el.getAttribute("title"),
-            () => FORM_TAGS.includes(el.tagName) ? el.focus() : el.click()))
+        const grab = el => this._dom.set(el, this.grab(el.getAttribute(options.selector), el.getAttribute("title"), el))
 
         //
         // Process options
@@ -241,7 +244,7 @@ class WebHotkeys {
      * @param {Target} callback  What will happen on shortcut trigger.
      *   If callback returns false, shortcut will be treated as non-existent and event will propagate further.
      *   If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
-     *   If callback is jQuery, its click method is taken instead.
+     *   If callback is jQuery, its first HTMLElement is taken instead. (TODO into docs)
      * @param {?Target} scope Scope within the shortcut is allowed to be launched.
      *  The scope can be an HTMLElement that the active element is being search under when the shortcut triggers.
      *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
@@ -261,29 +264,40 @@ class WebHotkeys {
         const _shortcut = new Shortcut(callback, hint, scope, event, this).enable()
 
         if (typeof (jQuery) !== "undefined" && callback instanceof jQuery && callback.get(0)) {
-            // append shorcut text to the element (ex: display 'anchor (Alt+1)')
-            if (!callback.data("webhotkeys-displayed")) { // append just once
-                callback.data("webhotkeys-displayed", true)
-                callback.append(_shortcut.shortcut_text(true))
-            }
-
-            // getting the click function with the right context
-            // (I don't know why, plain method.click.bind(method) didnt work in Chromium 67)
-            _shortcut.callback = callback.get(0).click.bind(callback.get(0))
-        } else if (callback instanceof HTMLElement) {
+            callback = callback.get(0)
+            console.warn("Deprecated. Get rid of ", callback, "and release a new version.") // TODO remove from docs
+        }
+        if (callback instanceof HTMLElement) {
             _shortcut.callback = () => FORM_TAGS.includes(callback.tagName) ? callback.focus() : callback.click()
+
+            if (this.options.hint && !callback.webhotkeys_displayed) {
+                const hint = _shortcut.shortcut_text(true)
+                if (this.options.hint === "title") {
+                    callback.title += hint
+                }
+                else if (this.options.hint === "text") {
+                    if (FORM_TAGS.includes(callback.tagName)) {
+                        if (callback.labels?.[0]?.innerHTML) {
+                            callback.labels[0].innerHTML += hint
+                        }
+                    } else {
+                        callback.innerHTML += hint
+                    }
+                }
+                callback.webhotkeys_displayed = true // prevent from being written twice
+            }
         }
         return _shortcut
     }
 
     /**
-     * Grab multiple shortcuts at once
+     * Grab multiple shortcuts at once. They are appended to a group.
      * @param {string} name Group name
      * @param {Array} definitions List of grab parameters. Ex: [["Ctrl+c", "Copy", callback], ["Ctrl+v", "Paste", callback]]
-     * @returns {Shortcut[]}
+     * @returns {ShortcutGroup}
      */
     group(name, definitions) {
-        return this._groups[name] = new ShortcutGroup(...definitions).map(d => this.grab(...d))
+        return (this._groups[name] ||= new ShortcutGroup()).push(...definitions.map(d => this.grab(...d)))
     }
 
     /**
@@ -635,5 +649,24 @@ class _List {
             }
         }
         return true;
+    }
+}
+
+//
+// Static methods
+//
+
+/** TODO not used yet for groups
+ * jQuery-like closest
+ * @param {Element} el Element being queried
+ * @param {string} selector Matching selector
+ * @returns {Element|undefined} Matching element (self, parent) or undefined
+ */
+function closest(el, selector) {
+    while (el) {
+        if (el.matches(selector)) {
+            return el
+        }
+        el = el.parentElement
     }
 }
