@@ -3,7 +3,7 @@
 Easy solution to integrate keyboard shortcuts into the webpage.
 
 ```javascript
-<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.0/WebHotkeys.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.1/WebHotkeys.js"></script>
 ```
 
 # Usage
@@ -24,7 +24,7 @@ OR
 ```
 
 ```javascript
-new WebHotkeys().init()  // grabs all [data-shortcut] elements
+new WebHotkeys()  // grabs all [data-shortcut] elements
 ```
 
 # Example
@@ -36,9 +36,7 @@ The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/
 
 ## `WebHotkeys` object
 
-Start with: `const wh = new WebHotkeys()`
-
-### Method `init`
+Start with: `const wh = new WebHotkeys(options)`
 
 Grabs all [data-shortcut] elements. Puts its title as a help text. Returns self.
 
@@ -48,8 +46,20 @@ Grabs all [data-shortcut] elements. Puts its title as a help text. Returns self.
 ```
 
 ```javascript
-new WebHotkeys().init()
+new WebHotkeys()
 ```
+
+### Constructor options
+
+You can pass an object to specify the options:
+
+| Property             | Default | Description                                                                       |
+|----------------------|---------|-----------------------------------------------------------------------------------|
+| grabF1               | true | Put basic help text under F1                                                     |
+| replaceAccesskeys    | true | If true, [accesskey] elements will be converted to shortcuts.                      |
+| observe              | true | Monitors DOM changes. Automatically un/grab shortcuts as DOM elements with the given selector dis/appear. |
+| selector             | `data-shortcut` | Attribute name to link DOM elements to shorcuts.      |
+
 
 ### Method `grab`
 
@@ -75,7 +85,9 @@ Start listening to a shortcut. Specify hint and callback to be triggered on hit.
 
     If you define both `code` and `key`, the `code` has the precedence.
 
-    If multiple shortcuts are defined, only the first one is executed.
+    If multiple shortcuts are defined, the one last defined only is executed.
+
+    "We attempt to determine whether the shortcut should not be triggered. Such as triggering shortcuts like `a` or `Delete` in an `<input>` contents, which makes no sense, but `F2` does.
 
     Some special shortcuts like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
 * `hint` (`string`): Help text.

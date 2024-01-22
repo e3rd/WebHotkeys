@@ -1,4 +1,16 @@
 /**
+ * Default configuration options for Web Hotkeys.
+ *
+ * @typedef {Object} WebHotkeysDefaults
+ * @property {boolean} [grabF1=true] Put basic help text under F1
+ * @property {boolean} [replaceAccesskeys=true] If true, [accesskey] elements will be converted to shortcuts.
+ * @property {boolean} [observe=true] Monitors DOM changes. Automatically un/grab shortcuts as DOM elements with the given selector dis/appear.
+ * @property {string} [selector='data-shortcut']  Attribute name to link DOM elements to shorcuts.
+ *
+ */
+const WebHotkeysDefaults = { replaceAccesskeys: true, grabF1: true, selector: "data-shortcut", observe: true }
+
+/**
  * Like KeyboardEvent but does not have guaranteed to contain all info.
  * Ex: {"code": "Digit1", "altKey": true} (missing shiftKey)
  * @typedef {KeyboardEvent} KeyEvent
@@ -35,8 +47,7 @@ class Shortcut {
         this.scope = scope
         this.event = event
         this.wh = wh
-        this.enabled = true
-        this.enable()
+        this.enabled = false
     }
 
     /**
@@ -61,6 +72,13 @@ class Shortcut {
     }
 
     /**
+     * @returns {Shortcut[]}
+     */
+    get registry() {
+        return this.wh._shortcuts[this.key_state] ||= []
+    }
+
+    /**
      *
      * @param {KeyEvent} e
      * @returns {ModState}
@@ -73,13 +91,14 @@ class Shortcut {
 
     enable() {
         this.enabled = true
-        if (!this.wh._shortcuts[this.key_state]?.includes(this)) {
-            (this.wh._shortcuts[this.key_state] ||= []).unshift(this)
+        if (!this.registry.includes(this)) {
+            this.registry.unshift(this)
         }
         return this
     }
     disable() {
         this.enabled = false
+        this.registry.splice(this.registry.indexOf(this), 1)
         return this
     }
     toggle(enable = null) {
@@ -110,32 +129,79 @@ class ShortcutGroup extends Array {
  * Main interface to define shortcuts
  */
 class WebHotkeys {
-    constructor() {
+    /**
+     * @param {WebHotkeysDefaults} options
+     */
+    constructor(options) {
+        //
+        // Definitions
+        //
+        options = { ...WebHotkeysDefaults, ...options }
+
         /**  @type {Object.<KeyState, Array<Shortcut>>} */
         this._shortcuts = {}
+        /** @type {WeakMap.<HTMLElement, Shortcut>} Links DOM elements to its shorcuts. */
+        this._dom = new WeakMap()
 
         /**  @type {Object.<string, Shortcut[]>} */
         this._groups = {}
 
-        // Start listening
-        document.addEventListener('keydown', e => this._trigger(e), true)
-    }
-
-    /**
-     * Grabs all [data-shortcut] elements. Puts its title as a help text.
-     * @param {boolean} grab_f1 Put basic help text under F1
-     * @returns {WebHotkeys}
-     */
-    init(grab_f1 = true) {
-        document.querySelectorAll("[data-shortcut]").forEach(el => this.grab(
-            el.getAttribute("data-shortcut"),
+        //
+        // Helper methods
+        //
+        /**
+         * @param {HTMLElement} el
+         * @returns {boolean} Has [data-shortcut] attribute
+         */
+        const eligible = el => el.getAttribute?.(options.selector)?.length
+        /** @param {HTMLElement} el Grab the element's [data-shortcut] attribute */
+        const grab = el => this._dom.set(el, this.grab(
+            el.getAttribute(options.selector),
             el.getAttribute("title"),
-            () => FORM_TAGS.includes(el.tagName) ? el.focus() : el.click())
-        )
+            () => FORM_TAGS.includes(el.tagName) ? el.focus() : el.click()))
 
-        if (grab_f1) {
+        //
+        // Process options
+        //
+        if (options.replaceAccesskeys) {
+            document.querySelectorAll("[accesskey]:not([accesskey=''])").forEach(el => {
+                // if concurrent accesskeys exists, preventDefault of the WebHotkeys would make it to fire alongside the shortcut,
+                // hence we transform accesskeys to shortcuts as well
+                el.setAttribute(options.selector, "Alt+" + el.getAttribute("accesskey"))
+                el.removeAttribute("accesskey")
+            })
+        }
+
+        // Grabs all [data-shortcut] elements. Puts its title as a help text.
+        document.querySelectorAll(`[${options.selector}]`).forEach(grab)
+
+        if (options.grabF1) {
             this.grab("F1", "Help", () => alert(this.getText()))
         }
+
+        if (options.observe) {
+            // un/register shortcut on DOM change
+            new MutationObserver(mutationList => {
+                for (const mutation of mutationList) {
+                    if (mutation.type === "attributes") {
+                        const el = mutation.target
+                        this._dom.get(el)?.disable() // old shortcut vanished
+                        if (eligible(el)) { // new shortcut appeared
+                            grab(el)
+                        }
+                    } else if (mutation.type === "childList") {
+                        Array.from(mutation.addedNodes).filter(eligible).forEach(grab)
+                        Array.from(mutation.removedNodes).filter(eligible).forEach(el => this._dom.get(el).disable())
+                    }
+
+                }
+            }).observe(document, { attributeFilter: [options.selector], childList: true, subtree: true })
+        }
+
+        //
+        // Start listening
+        //
+        document.addEventListener('keydown', e => this._trigger(e), true)
         return this
     }
 
@@ -144,11 +210,11 @@ class WebHotkeys {
      * @returns {string} Help text to current hotkeys' map.
      */
     getText() {
-        const all = Object.values(wh._shortcuts).flat().filter(s => s.enabled)
+        const all = Object.values(this._shortcuts).flat().filter(s => s.enabled)
         const enabled = new Set(all)
         const seen = new Set
 
-        const grouped = Object.entries(wh._groups).map(([name, group]) => {
+        const grouped = Object.entries(this._groups).map(([name, group]) => {
             const list = group
                 .filter(shortcut => enabled.has(shortcut)) // filter out disabled shortcuts
                 .map(shortcut => {
@@ -192,7 +258,7 @@ class WebHotkeys {
             callback = hint
             hint = ""
         }
-        const _shortcut = new Shortcut(callback, hint, scope, event, this)
+        const _shortcut = new Shortcut(callback, hint, scope, event, this).enable()
 
         if (typeof (jQuery) !== "undefined" && callback instanceof jQuery && callback.get(0)) {
             // append shorcut text to the element (ex: display 'anchor (Alt+1)')
@@ -214,7 +280,7 @@ class WebHotkeys {
      * Grab multiple shortcuts at once
      * @param {string} name Group name
      * @param {Array} definitions List of grab parameters. Ex: [["Ctrl+c", "Copy", callback], ["Ctrl+v", "Paste", callback]]
-     * @returns
+     * @returns {Shortcut[]}
      */
     group(name, definitions) {
         return this._groups[name] = new ShortcutGroup(...definitions).map(d => this.grab(...d))
@@ -289,17 +355,19 @@ class WebHotkeys {
      * @returns {undefined|boolean}
      */
     _trigger(e) {
+        // an input field has precedence over shorcuts
+        // Ex: arrow shortcuts must not work, these control text caret
         if (!e.altKey
             && !e.metaKey
-            && (e.key !== e.code // Escape, F1... anticipate a shortcut
-                || ["Delete", "Backspace", "Tab"].includes(e.key)) // except it is a text editing key
-            && ( // Ctrl without Arrows anticipates a shortcut
-                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)
-                || !e.ctrlKey
+            && (// this is a mere letter (not Escape, F1... which anticipate a shortcut)
+                e.key.length === 1
+                // or a text editing keys that can take use of Ctrl (Left and Ctrl+Left is text editing)
+                || ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Delete", "Backspace"].includes(e.key)
+                // or a text editing key that cannot take use of Ctrl (Enter is text editing, Ctrl+Enter is not)
+                || ["Tab", "Enter"].includes(e.key) && !e.ctrlKey
             )
             && FORM_TAGS.includes(document.activeElement.tagName)
             && document.activeElement.type !== "checkbox") {
-            // arrow shortcuts don't work when we are in an input field
             return
         }
 
@@ -334,15 +402,10 @@ class WebHotkeys {
                 }
             }
             const result = shortcut.callback.call(this)
-            if (result !== false) {// custom method suceeded
-                // XX rather than checking "go", use instanceof _List
-                // XX Or event better, maybe these liner are not needed anymore.
-                if (result != null && result.go != null) { // we found a macro, run it
-                    result.go(e.code)
-                }
 
+            if (result !== false) {// custom method suceeded
                 // prevent default behaviour (ex: Ctrl+L going to the address bar)
-                e.stopPropagation?.() // the method may not be available in a crafted  event
+                e.stopPropagation?.() // the method may not be available in a crafted event
                 e.preventDefault?.()
             }
         }
@@ -459,12 +522,9 @@ class _List {
      * Macro: Arrows UP/DOWN grabbed for listing instead of `this.list().goPrev/goNext`
      */
     handleUpDown() {
-        const f = function (e) {
-            return this._list.go(e);
-        };
-        this._wh.grab("ArrowUp", "Lists up", f);
-        this._wh.grab("ArrowDown", "Lists down", f);
-        return this;
+        this._wh.grab("ArrowUp", "Lists up", () => this.goPrev())
+        this._wh.grab("ArrowDown", "Lists down", () => this.goNext())
+        return this
     }
 
     /**
@@ -501,9 +561,6 @@ class _List {
             this.prev = this.next = this.selected = this.items[0];
             return true;
         }
-        //if (this._debug) {
-        //    console.warn("WebHotkeys.js list:", this.selected, this.next);
-        //}
         return false;
     }
 
@@ -519,42 +576,29 @@ class _List {
 
     /**
      * Get current this matching the selector. (Even if it changed since ex: last go call due to another user activity on page.)
-     * @return {null|Element|*}
+     * @return {null|HtmlElement|*}
      */
     getCurrent() {
-        this._loadSiblings();
-        return this.selected;
+        this._loadSiblings()
+        return this.selected
     }
 
     goNext(steps) {
-        if (this._loadSiblings(steps)) {
-            return this._change(this.next, this.selected);
-        } else {
-            return false;
-        }
+        return this._loadSiblings(steps) ? this._change(this.next, this.selected) : false
     }
 
     goPrev(steps) {
-        if (this._loadSiblings(steps)) {
-            return this._change(this.prev, this.selected);
-        } else {
-            return false;
-        }
+        return this._loadSiblings(steps) ? this._change(this.prev, this.selected) : false
     }
 
     /**
      *
-     * @param {string} code KeyboardEvent.code
+     * @param {boolean} forward
      * @param {int} steps
-     * @returns
+     * @returns {boolean}
      */
-    go(code, steps) {
-        if (this._loadSiblings(steps)) {
-            let el = ["ArrowDown", "NumpadAdd"].includes(code) ? this.next : this.prev;
-            return this._change(el, this.selected);
-        } else {
-            return false;
-        }
+    go(forward = true, steps = 1) {
+        return this._loadSiblings(steps) ? this._change((forward ? this.next : this.prev), this.selected) : false
     }
 
     _change(newEl, oldEl) {
