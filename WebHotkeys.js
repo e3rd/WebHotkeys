@@ -3,16 +3,16 @@
  *
  * @typedef {Object} WebHotkeysDefaults
  * @property {boolean} [grabF1=true] Put basic help text under F1
- * @property {boolean} [replaceAccesskeys=true] If true, [accesskey] elements will be converted to shortcuts.
- * @property {boolean} [observe=true] Monitors DOM changes. Automatically un/grab shortcuts as DOM elements with the given selector dis/appear.
- * @property {string} [selector='data-shortcut']  Attribute name to link DOM elements to shorcuts.
- * @property {string} [selectorGroup='data-shortcut-group']  Attribute name to link DOM elements to shorcut groups.
+ * @property {boolean} [replaceAccesskeys=true] If true, [accesskey] elements will be converted to hotkeys.
+ * @property {boolean} [observe=true] Monitors DOM changes. Automatically un/grab hotkeys as DOM elements with the given selector dis/appear.
+ * @property {string} [selector='data-hotkey']  Attribute name to link DOM elements to shorcuts.
+ * @property {string} [selectorGroup='data-hotkey-group']  Attribute name to link DOM elements to shorcut groups.
  * @property {string|boolean} [hint='title'] Values: 'title', 'text', false. Append shorcut text to the element title (ex: 'anchor (Alt+1)') or its text (or its label for the case of a form element). (TODO docs)
  *
  */
 const WebHotkeysDefaults = {
     replaceAccesskeys: true, grabF1: true,
-    selector: "data-shortcut", selectorGroup: 'data-shortcut-group',
+    selector: "data-hotkey", selectorGroup: 'data-hotkey-group',
     observe: true, hint: "title"
 }
 
@@ -21,12 +21,11 @@ const WebHotkeysDefaults = {
  * Ex: {"code": "Digit1", "altKey": true} (missing shiftKey)
  * @typedef {KeyboardEvent} KeyEvent
  */
-/** event.code "Digit1", event.key "1" or a combination with a modifier "Ctrl+Digit1"
+/** Key combination. Either event.code "Digit1", event.key "1" or a combination with a modifier "Ctrl+Digit1"
  * @typedef {string} Key
  */
-/**
- *  @typedef {HTMLElement|Function|jQuery} Target
- */
+/** @typedef {HTMLElement|Function} ResolvedAction An element or a callback function. */
+/** @typedef {ResolvedAction|string} Action An element, its selector or a callback function. */
 /**
  * Key letter combined with modifiers. Just because JS does not support tuple as a key dict.
  * @typedef {string} KeyState
@@ -38,17 +37,17 @@ const WebHotkeysDefaults = {
 
 const FORM_TAGS = ["INPUT", "SELECT", "TEXTAREA"]
 
-class Shortcut {
+class Hotkey {
     /**
      *
-     * @param {function} callback
+     * @param {ResolvedAction} action
      * @param {string} hint
-     * @param {Target} scope
+     * @param {Action} scope
      * @param {KeyEvent} event
      * @param {WebHotkeys} wh
      */
-    constructor(callback, hint, scope, event, wh) {
-        this.callback = callback
+    constructor(action, hint, scope, event, wh) {
+        this.action = action
         this.hint = hint
         this.scope = scope
         this.event = event
@@ -57,11 +56,10 @@ class Shortcut {
     }
 
     /**
-    * Generate shortcut text for given keycode
-    * @param {int} keyCode
+    * Generate hotkey combination as text
     * @returns {string}
     */
-    shortcut_text(append_parenthesis = false) {
+    getHotkey(append_parenthesis = false) {
         const pre = (this.event.ctrlKey ? "Ctrl+" : "") + (this.event.shiftKey ? "Shift+" : "") + (this.event.altKey ? "Alt+" : "")
         const key = this.event.key || this.event.code.replace(/^Digit(\d)$/, "$1") // 'Alt+Digit1' -> 'Alt+1'
         if (append_parenthesis) {
@@ -74,14 +72,14 @@ class Shortcut {
      * @returns {KeyState}
      */
     get key_state() {
-        return (this.event.key || this.event.code) + Shortcut.mod_state(this.event)
+        return (this.event.key || this.event.code) + Hotkey.mod_state(this.event)
     }
 
     /**
-     * @returns {Shortcut[]}
+     * @returns {Hotkey[]}
      */
     get registry() {
-        return this.wh._shortcuts[this.key_state] ||= []
+        return this.wh._hotkeys[this.key_state] ||= []
     }
 
     /**
@@ -91,7 +89,7 @@ class Shortcut {
      */
     static mod_state(e, supress_shift = false) {
         // If there ever be a clash between key and code, we might put a list into storage
-        // and compare shortcuts like this: [modifiers] = [{key: 1}, {code: Digit1}]
+        // and compare hotkeys like this: [modifiers] = [{key: 1}, {code: Digit1}]
         return String((supress_shift ? 0 : e.shiftKey << 3) | e.altKey << 2 | e.ctrlKey << 1 | e.metaKey)
     }
 
@@ -114,25 +112,25 @@ class Shortcut {
 }
 
 /**
- * @extends {Array<Shortcut>}
+ * @extends {Array<Hotkey>}
  */
-class ShortcutGroup extends Array {
+class HotkeyGroup extends Array {
     enable() {
-        this.forEach(shortcut => shortcut.enable())
+        this.forEach(hotkey => hotkey.enable())
         return this
     }
     disable() {
-        this.forEach(shortcut => shortcut.disable())
+        this.forEach(hotkey => hotkey.disable())
         return this
     }
     toggle(enable = null) {
-        this.forEach(shortcut => shortcut.toggle(enable))
+        this.forEach(hotkey => hotkey.toggle(enable))
         return this
     }
 }
 
 /**
- * Main interface to define shortcuts
+ * Main interface to define hotkeys
  */
 class WebHotkeys {
     /**
@@ -144,12 +142,12 @@ class WebHotkeys {
         //
         options = this.options = { ...WebHotkeysDefaults, ...options }
 
-        /**  @type {Object.<KeyState, Array<Shortcut>>} */
-        this._shortcuts = {}
-        /** @type {WeakMap.<HTMLElement, Shortcut>} Links DOM elements to its shorcuts. */
+        /**  @type {Object.<KeyState, Hotkey[]>} */
+        this._hotkeys = {}
+        /** @type {WeakMap.<HTMLElement, Hotkey>} Links DOM elements to its shorcuts. */
         this._dom = new WeakMap()
 
-        /**  @type {Object.<string, Shortcut[]>} */
+        /**  @type {Object.<string, Hotkey[]>} */
         this._groups = {}
 
         //
@@ -157,10 +155,10 @@ class WebHotkeys {
         //
         /**
          * @param {HTMLElement} el
-         * @returns {boolean} Has [data-shortcut] attribute
+         * @returns {boolean} Has [data-hotkey] attribute
          */
         const eligible = el => el.getAttribute?.(options.selector)?.length
-        /** @param {HTMLElement} el Grab the element's [data-shortcut] attribute */
+        /** @param {HTMLElement} el Grab the element's [data-hotkey] attribute */
         const grab = el => this._dom.set(el, this.grab(el.getAttribute(options.selector), el.getAttribute("title"), el))
 
         //
@@ -168,14 +166,14 @@ class WebHotkeys {
         //
         if (options.replaceAccesskeys) {
             document.querySelectorAll("[accesskey]:not([accesskey=''])").forEach(el => {
-                // if concurrent accesskeys exists, preventDefault of the WebHotkeys would make it to fire alongside the shortcut,
-                // hence we transform accesskeys to shortcuts as well
+                // if concurrent accesskeys exists, preventDefault of the WebHotkeys would make it to fire alongside the hotkey,
+                // hence we transform accesskeys to hotkeys as well
                 el.setAttribute(options.selector, "Alt+" + el.getAttribute("accesskey"))
                 el.removeAttribute("accesskey")
             })
         }
 
-        // Grabs all [data-shortcut] elements. Puts its title as a help text.
+        // Grabs all [data-hotkey] elements. Puts its title as a help text.
         document.querySelectorAll(`[${options.selector}]`).forEach(grab)
 
         if (options.grabF1) {
@@ -183,13 +181,13 @@ class WebHotkeys {
         }
 
         if (options.observe) {
-            // un/register shortcut on DOM change
+            // un/register hotkey on DOM change
             new MutationObserver(mutationList => {
                 for (const mutation of mutationList) {
                     if (mutation.type === "attributes") {
                         const el = mutation.target
-                        this._dom.get(el)?.disable() // old shortcut vanished
-                        if (eligible(el)) { // new shortcut appeared
+                        this._dom.get(el)?.disable() // old hotkey vanished
+                        if (eligible(el)) { // new hotkey appeared
                             grab(el)
                         }
                     } else if (mutation.type === "childList") {
@@ -213,99 +211,108 @@ class WebHotkeys {
      * @returns {string} Help text to current hotkeys' map.
      */
     getText() {
-        const all = Object.values(this._shortcuts).flat().filter(s => s.enabled)
+        const all = Object.values(this._hotkeys).flat().filter(s => s.enabled)
         const enabled = new Set(all)
         const seen = new Set
 
         const grouped = Object.entries(this._groups).map(([name, group]) => {
             const list = group
-                .filter(shortcut => enabled.has(shortcut)) // filter out disabled shortcuts
-                .map(shortcut => {
-                    seen.add(shortcut)
-                    return `${shortcut.shortcut_text()}: ${shortcut.hint}`
+                .filter(hotkey => enabled.has(hotkey)) // filter out disabled hotkeys
+                .map(hotkey => {
+                    seen.add(hotkey)
+                    return `${hotkey.getHotkey()}: ${hotkey.hint}`
                 })
-            if (list.length) { // if at least one shortcut from a group remains enabled
+            if (list.length) { // if at least one hotkey from a group remains enabled
                 return `\n**${name}**\n` + list.join("\n")
             }
         })
 
         const ungrouped = all
-            .filter(shortcut => !seen.has(shortcut))
-            .map(shortcut => shortcut.shortcut_text() + ": " + shortcut.hint)
+            .filter(hotkey => !seen.has(hotkey))
+            .map(hotkey => hotkey.hotkey_text() + ": " + hotkey.hint)
 
         return [...ungrouped, ...grouped].join("\n").trim()
     }
 
     /**
-     * .grab(key, [hint], callback, [scope])
+     * .grab(hotkey, [hint], action, [scope])
      *
-     * @param {Key} shortcut
-     * @param {string|Function} hint If Fn, this is taken as the callback parameter.
-     * @param {Target} callback  What will happen on shortcut trigger.
-     *   If callback returns false, shortcut will be treated as non-existent and event will propagate further.
-     *   If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
-     *   If callback is jQuery, its first HTMLElement is taken instead. (TODO into docs)
-     * @param {?Target} scope Scope within the shortcut is allowed to be launched.
-     *  The scope can be an HTMLElement that the active element is being search under when the shortcut triggers.
+     * @param {Key} hotkey
+     * @param {string|Action} hintOrAction Either hint text or an action (if the action parameter stays undefined). (TODO docs)
+     * @param {Action} action  What will happen on hotkey trigger.
+     *   If action returns false, hotkey will be treated as non-existent and event will propagate further.
+     *   If action is a HTMLElement, its click or focus method (form elements) is taken instead.
+     *   If action is jQuery, its first HTMLElement is taken instead. (TODO NO jquery + into docs)
+     * @param {?Action} scope Scope within the hotkey is allowed to be launched.
+     *  The scope can be an HTMLElement that the active element is being search under when the hotkey triggers.
+     *  The scope can an HTMLElement selector, does not have to exist at the shorcut definition time. (TODO docs scope gets rid of jQuery)
      *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
      *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
-     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
-     * @returns {Shortcut}
+     * @returns {Hotkey}
      */
-    grab(shortcut, hint, callback, scope = null) {
-        const event = this._parseShortcut(shortcut)
+    grab(hotkey, hintOrAction, action, scope = null) {
+        const event = this._parseHotkey(hotkey)
 
         // juggle optional parameters
-        if (typeof hint === "function") {
-            scope = callback // hint (optional parameter) was not used - shift the others
-            callback = hint
-            hint = ""
+        if (action === undefined) {  // action parameter was not used - shift the others
+            action = hintOrAction
+            hintOrAction = ""
         }
-        const _shortcut = new Shortcut(callback, hint, scope, event, this).enable()
-
-        if (typeof (jQuery) !== "undefined" && callback instanceof jQuery && callback.get(0)) {
-            callback = callback.get(0)
-            console.warn("Deprecated. Get rid of ", callback, "and release a new version.") // TODO remove from docs
-        }
-        if (callback instanceof HTMLElement) {
-            _shortcut.callback = () => FORM_TAGS.includes(callback.tagName) ? callback.focus() : callback.click()
-
-            if (this.options.hint && !callback.webhotkeys_displayed) {
-                const hint = _shortcut.shortcut_text(true)
-                if (this.options.hint === "title") {
-                    callback.title += hint
-                }
-                else if (this.options.hint === "text") {
-                    if (FORM_TAGS.includes(callback.tagName)) {
-                        if (callback.labels?.[0]?.innerHTML) {
-                            callback.labels[0].innerHTML += hint
-                        }
-                    } else {
-                        callback.innerHTML += hint
-                    }
-                }
-                callback.webhotkeys_displayed = true // prevent from being written twice
+        let error = !hotkey || !action
+        if (isString(action)) {
+            try {
+                action = document.querySelector(action)
+            } catch (e) {
+                error = true
             }
         }
-        return _shortcut
+        if (error) {
+            console.error(`WebHotkeys.js> Unknown action hotkey for action ${hotkey} ${action}`)
+            return
+        }
+
+        const _hotkey = new Hotkey(action, hintOrAction, scope, event, this).enable()
+
+        if (action instanceof HTMLElement) {
+            if (!hintOrAction) {
+                _hotkey.hint = action.title || action.innerText.substring(0, 50)
+            }
+            if (this.options.hint && !action.webhotkeys_displayed) {
+                const hint = _hotkey.getHotkey(true)
+                if (this.options.hint === "title") {
+                    action.title += hint
+                }
+                else if (this.options.hint === "text") {
+                    if (FORM_TAGS.includes(action.tagName)) {
+                        if (action.labels?.[0]?.innerHTML) {
+                            action.labels[0].innerHTML += hint
+                        }
+                    } else {
+                        action.innerHTML += hint
+                    }
+                }
+                action.webhotkeys_displayed = true // prevent from being written twice
+            }
+        }
+        return _hotkey
     }
 
     /**
-     * Grab multiple shortcuts at once. They are appended to a group.
+     * Grab multiple hotkeys at once. They are appended to a group.
      * @param {string} name Group name
      * @param {Array} definitions List of grab parameters. Ex: [["Ctrl+c", "Copy", callback], ["Ctrl+v", "Paste", callback]]
-     * @returns {ShortcutGroup}
+     * @returns {HotkeyGroup}
      */
     group(name, definitions) {
-        return (this._groups[name] ||= new ShortcutGroup()).push(...definitions.map(d => this.grab(...d)))
+        return (this._groups[name] ||= new HotkeyGroup()).push(...definitions.map(d => this.grab(...d)))
     }
 
     /**
      *
-     * @param {Key} shortcut Ex: Shift+s or Alt+Shift+Digit1
+     * @param {Key} hotkey Ex: Shift+s or Alt+Shift+Digit1
      * @returns {KeyEvent}
      */
-    _parseShortcut(shortcut) {
+    _parseHotkey(hotkey) {
         const modifiers = {
             "alt": "alt",
             "shift": "shift",
@@ -313,7 +320,7 @@ class WebHotkeys {
             "ctrl": "ctrl",
             "control": "ctrl",
         }
-        const parts = shortcut.split('+')
+        const parts = hotkey.split('+')
         if (parts[parts.length - 1] === '' && parts[parts.length - 2] === '') { // handle the plus key
             parts.splice(parts.length - 2, 2, '+') // `Alt++` -> ["Alt", "", ""] -> ["Alt", "+"]
         }
@@ -325,7 +332,7 @@ class WebHotkeys {
             if (modifier) {
                 event[modifier + "Key"] = true // {"shiftKey": true}
             } else {
-                console.warn(`Unknown modifier at ${shortcut}`)
+                console.warn(`Unknown modifier at ${hotkey}`)
             }
         })
         return event
@@ -370,10 +377,10 @@ class WebHotkeys {
      */
     _trigger(e) {
         // an input field has precedence over shorcuts
-        // Ex: arrow shortcuts must not work, these control text caret
+        // Ex: arrow hotkeys must not work, these control text caret
         if (!e.altKey
             && !e.metaKey
-            && (// this is a mere letter (not Escape, F1... which anticipate a shortcut)
+            && (// this is a mere letter (not Escape, F1... which anticipate a hotkey)
                 e.key.length === 1
                 // or a text editing keys that can take use of Ctrl (Left and Ctrl+Left is text editing)
                 || ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Delete", "Backspace"].includes(e.key)
@@ -385,52 +392,54 @@ class WebHotkeys {
             return
         }
 
-        /** @type {?Shortcut} */
-        // First check whether a `code` shortcut was defined (`Alt+Digit1`).
+        // First check whether a `code` hotkey was defined (`Alt+Digit1`).
         // If not, try its `key` property (`Alt+1` (EN) or `Alt++` (CZ)).
         // If the key is a one-char but-not-letter sign ( -> not affectable by Shift), we ignore the Shift state.
         // Ex: To access the question mark on eng and cz keyboard, we have to hit Shift.
-        // However, the developper sets the shortcut as "?", not "Shift+?".
+        // However, the developper sets the hotkey as "?", not "Shift+?".
         // If the key is a one-char upper-letter ( -> for sure affected by Shift), we convert it to the lower case.
         // Ex: Grabbed combination "Shift+Alt+l" would always produce "Shift+Alt+L".
-        const shortcut = this._shortcuts[e.code + Shortcut.mod_state(e)]?.find(s => s.enabled)
-            || this._shortcuts[(e.key?.length === 1 && /[A-Z]/.test(e.key) ? e.key.toLowerCase() : e.key) + Shortcut.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]?.find(s => s.enabled)
-        if (shortcut) {
-            if (shortcut.scope) { // check we are in allowed scope (the focused element has shortcut.scope for the ancestor)
-                const scope = (typeof jQuery !== "undefined" && shortcut.scope instanceof jQuery) ? shortcut.scope.get()[0] : shortcut.scope
-                if (!scope) { // scope element is not contained in the page – we can't be focused within the scope
-                    return
-                }
+        for (const hotkey of /** @type {Hotkey[]} */ ([...this._hotkeys[e.code + Hotkey.mod_state(e)]?.filter(s => s.enabled) || [], ...this._hotkeys[(e.key?.length === 1 && /[A-Z]/.test(e.key) ? e.key.toLowerCase() : e.key) + Hotkey.mod_state(e, e.key?.length === 1 && !/[A-Za-z]/.test(e.key))]?.filter(s => s.enabled) || []])) {
+            if (hotkey.scope) { // check we are in allowed scope (the focused element has hotkey.scope for the ancestor)
+                const scope = isString(hotkey.scope) ? document.querySelector(hotkey.scope) : hotkey.scope
                 if (scope instanceof Function) {
                     if (!scope()) {
-                        return
+                        continue
                     }
-                } else {
-                    let el = document.activeElement
-                    while (!el.isSameNode(scope)) {
-                        el = el.parentNode
-                        if (!el) {
-                            return // not allowed scope
-                        }
+                } else { // check whether active element is contained under the scope
+                    if (!closest(document.activeElement, hotkey.scope)) {
+                        continue // not allowed scope
                     }
                 }
             }
-            const result = shortcut.callback.call(this)
+
+            // trigger the hotkey
+            let result
+            const action = hotkey.action
+            if (action instanceof HTMLElement) {
+                if (action.disabled) {
+                    continue // action is a disabled HTMLElement, continue to next shorcut
+                }
+                result = FORM_TAGS.includes(action.tagName) ? action.focus() : action.click()
+            } else {
+                result = action.call(this)
+            }
 
             if (result !== false) {// custom method suceeded
                 // prevent default behaviour (ex: Ctrl+L going to the address bar)
                 e.stopPropagation?.() // the method may not be available in a crafted event
                 e.preventDefault?.()
             }
+            return
         }
     }
 
     /**
      *
-     * @param {Key|KeyEvent} shortcut
+     * @param {Key|KeyEvent} hotkey
      */
-    simulate(shortcut) {
-        this._trigger(shortcut.constructor === String ? this._parseShortcut(shortcut) : shortcut)
+    simulate(hotkey) {
+        this._trigger(hotkey.constructor === String ? this._parseHotkey(hotkey) : hotkey)
     }
 
     /**
@@ -582,7 +591,7 @@ class _List {
         if (this._loadSiblings()) {
             this._change(el);
             if (!this._loadSiblings()) {
-                console.error("Webhotkeys.js: Could not change successfully to:", el);
+                console.error("WebHotkeys.js> Could not change successfully to:", el);
             }
         }
         return this;
@@ -640,7 +649,7 @@ class _List {
             } else if (this.currentSelector.indexOf(":focus") === 0) {
                 newEl.focus();
             } else { //selector can be I.E. a data-attribute
-                console.error("Webhotkeys.js: Don't know how to process selector type:", this.currentSelector);
+                console.error("WebHotkeys.js> Don't know how to process selector type:", this.currentSelector);
                 return false;
             }
             this.selected = newEl;
@@ -656,15 +665,23 @@ class _List {
 // Static methods
 //
 
+function isString(t) {
+    return typeof t === 'string' || t instanceof String
+}
+
 /** TODO not used yet for groups
  * jQuery-like closest
  * @param {Element} el Element being queried
- * @param {string} selector Matching selector
+ * @param {string|HTMLElement|null} selector Matching selector
  * @returns {Element|undefined} Matching element (self, parent) or undefined
  */
 function closest(el, selector) {
+    if (!selector) {
+        return
+    }
+    const match = isString(selector) ? el => el.matches(selector) : el => el.isSameNode(selector)
     while (el) {
-        if (el.matches(selector)) {
+        if (match(el)) {
             return el
         }
         el = el.parentElement

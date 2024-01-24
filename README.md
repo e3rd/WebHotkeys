@@ -1,6 +1,6 @@
 # WebHotkeys
 
-Easy solution to integrate keyboard shortcuts into the webpage.
+Easy solution to integrate keyboard hotkeys into the webpage.
 
 ```javascript
 <script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.0/WebHotkeys.js"></script>
@@ -10,7 +10,7 @@ Easy solution to integrate keyboard shortcuts into the webpage.
 
 ```javascript
 const wh = new WebHotkeys()
-// shortcut, hint, callback, [scope]
+// hotkey, hint, callback, [scope]
 wh.grab("Enter", "Displays an alert", () => alert("This happens"))
 
 // You can use modifiers: Alt, Shift, Ctrl (Control)
@@ -20,11 +20,11 @@ wh.grab("Enter", "Displays an alert", () => alert("This happens"))
 OR
 
 ```html
-<a href="..." data-shortcut="Ctrl+Enter" title="Help text">link</a>
+<a href="..." data-hotkey="Ctrl+Enter" title="Help text">link</a>
 ```
 
 ```javascript
-new WebHotkeys()  // grabs all [data-shortcut] elements
+new WebHotkeys()  // grabs all [data-hotkey] elements
 ```
 
 # Example
@@ -38,11 +38,11 @@ The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/
 
 Start with: `const wh = new WebHotkeys(options)`
 
-Grabs all [data-shortcut] elements. Puts its title as a help text. Returns self.
+Grabs all [data-hotkey] elements. Puts its title as a help text. Returns self.
 
 ```html
-<a href="..." data-shortcut="Alt+1" title="Go to an example link 1">link 1</a>
-<a href="..." data-shortcut="Alt+2" title="Go to an example link 2">link 2</a>
+<a href="..." data-hotkey="Alt+1" title="Go to an example link 1">link 1</a>
+<a href="..." data-hotkey="Alt+2" title="Go to an example link 2">link 2</a>
 ```
 
 ```javascript
@@ -56,16 +56,16 @@ You can pass an object to specify the options:
 | Property             | Default | Description                                                                       |
 |----------------------|---------|-----------------------------------------------------------------------------------|
 | grabF1               | true | Put basic help text under F1                                                     |
-| replaceAccesskeys    | true | If true, [accesskey] elements will be converted to shortcuts.                      |
-| observe              | true | Monitors DOM changes. Automatically un/grab shortcuts as DOM elements with the given selector dis/appear. |
-| selector             | `data-shortcut` | Attribute name to link DOM elements to shorcuts.      |
+| replaceAccesskeys    | true | If true, [accesskey] elements will be converted to hotkeys.                      |
+| observe              | true | Monitors DOM changes. Automatically un/grab hotkeys as DOM elements with the given selector dis/appear. |
+| selector             | `data-hotkey` | Attribute name to link DOM elements to shorcuts.      |
 
 
 ### Method `grab`
 
-Start listening to a shortcut. Specify hint and callback to be triggered on hit. Returns a `Shortcut` object. It accepts following parameters:
+Start listening to a hotkey. Specify hint and callback to be triggered on hit. Returns a `Hotkey` object. It accepts following parameters:
 
-* `shortcut` (`string`)
+* `hotkey` (`string`)
     Key combination to be grabbed. Either use any `code` value https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values of the event:
 
     ```javascript
@@ -78,52 +78,52 @@ Start listening to a shortcut. Specify hint and callback to be triggered on hit.
     ```javascript
     wh.grab("1", "Hint", () => alert("Number 1 hit"))
     wh.grab("+", "Hint", () => alert("Plus sign hit"))
-    wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the shortcut)"))
+    wh.grab("?", "Hint", () => alert("Question mark hit (you don't have to mention shift in the hotkey)"))
     wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
     wh.grab("f", "Hint", () => alert("Letter f hit (specified by the `key` property)"))
     ```
 
-    If you define both `code` and `key`, the `code` has the precedence.
+    If you define both `code` and `key`, the `code` takes precedence, and then the last one defined takes precedence.
 
-    If multiple shortcuts are defined, the one last defined only is executed.
+    If multiple hotkeys are defined, only one is executed. We skip hotkeys that are not in the correct scope or whoise underlying element is disabled.
 
-    "We attempt to determine whether the shortcut should not be triggered. Such as triggering shortcuts like `a` or `Delete` in an `<input>` contents, which makes no sense, but `F2` does.
+    "We attempt to determine whether the hotkey should not be triggered. Such as triggering hotkeys like `a` or `Delete` in an `<input>` contents, which makes no sense, but `F2` does.
 
-    Some special shortcuts like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
+    Some special hotkeys like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
 * `hint` (`string`): Help text.
-* `callback` (`{HTMLElement|Function|jQuery}`): What will happen on shortcut trigger.
-     *  If callback returns false, shortcut will be treated as non-existent and event will propagate further.
+* `callback` (`{HTMLElement|Function|jQuery}`): What will happen on hotkey trigger.
+     *  If callback returns false, hotkey will be treated as non-existent and event will propagate further.
      *  If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
      *  If callback is jQuery, its click method is taken instead.
-* `scope` (`{HTMLElement|Function|jQuery}`): Scope within the shortcut is allowed to be launched.
-     *  The scope can be an HTMLElement that the active element is being search under when the shortcut triggers.
+* `scope` (`{HTMLElement|Function|jQuery}`): Scope within the hotkey is allowed to be launched.
+     *  The scope can be an HTMLElement that the active element is being search under when the hotkey triggers.
      *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
      *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
-     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the shortcut definition time.
+     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the hotkey definition time.
 
 
 ### Method `group`
-Grab multiple shortcuts at once. Returns a `ShortcutGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
+Grab multiple hotkeys at once. Returns a `HotkeyGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
 
 ```javascript
 // name, definitions (grab method parameters as a list)
-const general = wh.group("General shortcuts", [
+const general = wh.group("General hotkeys", [
     ["n", "Next", () => this.nextFrame()],
     ["p", "Prev", () => this.previousFrame()],
 ])
 
-general.disable() // disable all shortcuts
+general.disable() // disable all hotkeys
 general.toggle() // re-enable them
 general.toggle(false) // re-disable them
 ```
 
 ### Method `simulate`
 
-Manually trigger a shortcut.
+Manually trigger a hotkey.
 
 ```javascript
-// Simulate hitting Shift+1 shortcut
-wh.grab("Shift+Digit1", "Number 1 shortcut", () => alert("Shift+Number 1 hit"))
+// Simulate hitting Shift+1 hotkey
+wh.grab("Shift+Digit1", "Number 1 hotkey", () => alert("Shift+Number 1 hit"))
 wh.simulate("Shift+Digit1")
 
 // You can include KeyEvent object or its part too
@@ -133,7 +133,7 @@ wh.simulate( { shiftKey: true, code: "Digit1" })
 ### Method `getText`
 Display hints.
 
-## `Shortcut` object
+## `Hotkey` object
 
 ### Method `enabled`
 
