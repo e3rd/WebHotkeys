@@ -27,6 +27,8 @@ OR
 new WebHotkeys()  // grabs all [data-hotkey] elements
 ```
 
+You can dynamically remove / add `data-hotkey` attributes.
+
 # Example
 See the live [example](https://e3rd.github.io/WebHotkeys/example.html).
 
@@ -53,12 +55,15 @@ new WebHotkeys()
 
 You can pass an object to specify the options:
 
-| Property             | Default | Description                                                                       |
-|----------------------|---------|-----------------------------------------------------------------------------------|
-| grabF1               | true | Put basic help text under F1                                                     |
-| replaceAccesskeys    | true | If true, [accesskey] elements will be converted to hotkeys.                      |
-| observe              | true | Monitors DOM changes. Automatically un/grab hotkeys as DOM elements with the given selector dis/appear. |
-| selector             | `data-hotkey` | Attribute name to link DOM elements to shorcuts.      |
+| Property             | Type    | Default | Description                                                                       |
+|----------------------|---------|---------|-----------------------------------------------------------------------------------|
+| hint                 | `'title'|'text'|false` | `title` | Append shorcut text to the element title (ex: 'anchor (Alt+1)') or its text (or its label for the case of a form element). |
+| grabF1               | boolean | true | Put basic help text under F1                                                     |
+| replaceAccesskeys    | boolean | true | If true, [accesskey] elements will be converted to hotkeys.                      |
+| observe              | boolean | true | Monitors DOM changes. Automatically un/grab hotkeys as DOM elements with the given selector dis/appear. |
+| onToggle             | function| undefined |  When having a DOM element linked, run this callback on hotkey toggle. This will be set to the hotkey, first parameter being the element, second boolean whether it got enabled. |
+| selector             | string  | `data-hotkey` | Attribute name to link DOM elements to shorcuts.      |
+| selectorGroup        | string  | `data-hotkey-group` |  Attribute name to link DOM elements to shorcut groups. |
 
 
 ### Method `grab`
@@ -90,17 +95,16 @@ Start listening to a hotkey. Specify hint and callback to be triggered on hit. R
     "We attempt to determine whether the hotkey should not be triggered. Such as triggering hotkeys like `a` or `Delete` in an `<input>` contents, which makes no sense, but `F2` does.
 
     Some special hotkeys like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
-* `hint` (`string`): Help text.
-* `callback` (`{HTMLElement|Function|jQuery}`): What will happen on hotkey trigger.
+* `hintOrAction` (`string|HTMLElement|Function`): Either hint text or an action (if the action parameter stays undefined).
+* `callback` (`{string|HTMLElement|Function}`): What will happen on hotkey trigger.
      *  If callback returns false, hotkey will be treated as non-existent and event will propagate further.
-     *  If callback is a HTMLElement, its click or focus method (form elements) is taken instead.
+     *  If action is a HTMLElement or its string selector, its click or focus method (form elements) is taken instead.
      *  If callback is jQuery, its click method is taken instead.
 * `scope` (`{HTMLElement|Function|jQuery}`): Scope within the hotkey is allowed to be launched.
      *  The scope can be an HTMLElement that the active element is being search under when the hotkey triggers.
+     *  The scope can an HTMLElement selector, does not have to exist at the shorcut definition time.
      *  The scope can be a function, resolved at the keystroke time. True means the scope matches. That way, you can implement negative scope.
      *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
-     *  The scope can be jQuery -> the element matched by the selector doesn't have to exist at the hotkey definition time.
-
 
 ### Method `group`
 Grab multiple hotkeys at once. Returns a `HotkeyGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
@@ -115,6 +119,21 @@ const general = wh.group("General hotkeys", [
 general.disable() // disable all hotkeys
 general.toggle() // re-enable them
 general.toggle(false) // re-disable them
+```
+
+Alternatively, you can set the group in the DOM. Either on the element or on any of its ancestors:
+
+```html
+<a href="..." data-hotkey="Alt+1" data-hotkey-group="Global shortcuts" title="Go to an example link 1">link 1</a>
+<div data-hotkey-group="Global shortcuts">
+    <a href="..." data-hotkey="Alt+2" title="Go to an example link 2">link 2</a>
+</div>
+```
+
+Such group can be accessed via the method `group` too:
+
+```js
+wh.group("Global shortcuts").disable()
 ```
 
 ### Method `simulate`
