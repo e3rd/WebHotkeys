@@ -5,9 +5,12 @@
 </head>
 
 <body>
-    Currently active shortcuts:<br>
+    <button onclick="alert('Clicked the button')" data-hotkey="Ctrl+j">button</button>
+    <br><br>
+    Currently active shortcuts:
+    <p id="hint"></p>
     <script>
-        const wh = new WebHotkeys()
+        const wh = window.webHotkeys
         wh.grab("Enter", "Displays an alert", () => alert("This happens"))
         wh.grab("Digit1", "Hint", () => alert("Digit1 key (whatever keyboard layout) hit"))
         wh.grab("Alt+ArrowDown", "Hint", () => alert("Alt+ArrowDown hit"))
@@ -18,7 +21,8 @@
         wh.grab("Alt++", "Hint", () => alert("Plus sign with the Alt hit"))
         wh.grab("g", "Hint", () => alert("Letter g hit (specified by the `key` property)"))
 
-        document.write((wh.getText().split("\n").join("<br>")))
+        document.addEventListener("DOMContentLoaded", () => // wait the [data-hotkey] to be registered
+            document.getElementById("hint").innerHTML = wh.getText().split("\n").join("<br>"))
     </script>
 </body>
 

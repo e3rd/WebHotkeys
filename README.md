@@ -3,31 +3,27 @@
 Easy solution to integrate keyboard hotkeys into the webpage.
 
 ```javascript
-<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.0/WebHotkeys.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/e3rd/WebHotkeys@0.9.2/WebHotkeys.js?register"></script>
 ```
 
 # Usage
 
-```javascript
-const wh = new WebHotkeys()
-// hotkey, hint, callback, [scope]
-wh.grab("Enter", "Displays an alert", () => alert("This happens"))
-
-// You can use modifiers: Alt, Shift, Ctrl (Control)
-// wh.grab("Shift+Alt+l", ...
-```
-
-OR
+Just use the `[data-hotkey]` attribute.
 
 ```html
 <a href="..." data-hotkey="Ctrl+Enter" title="Help text">link</a>
+<button href="..." data-hotkey="Shift+Alt+l" title="Any action">my button</button>
 ```
+
+Those attributes can be dynamically added / removed.
+
+Or use the JS interface, with the help of the `window.webHotkeys` variable.
 
 ```javascript
-new WebHotkeys()  // grabs all [data-hotkey] elements
+const wh = window.webHotkeys
+// hotkey, hint, action, [scope]
+wh.grab("Enter", "Displays an alert", () => alert("This happens"))
 ```
-
-You can dynamically remove / add `data-hotkey` attributes.
 
 # Example
 See the live [example](https://e3rd.github.io/WebHotkeys/example.html).
@@ -38,22 +34,35 @@ The library intercepts [KeyboardEvent](https://developer.mozilla.org/en-US/docs/
 
 ## `WebHotkeys` object
 
-Start with: `const wh = new WebHotkeys(options)`
+### Using `register`
 
-Grabs all [data-hotkey] elements. Puts its title as a help text. Returns self.
+If you load the script with the `register` parameter, you have nothing more to do.
+
+```html
+<script src=".../WebHotkeys.js?register"></script>
+```
+
+On load, the `register` parameter makes a `new WebHotkeys` instance being implicitly stored to `window.webHotkeys`. Then it grabs all `[data-hotkey]` elements and puts its title as a help text.
 
 ```html
 <a href="..." data-hotkey="Alt+1" title="Go to an example link 1">link 1</a>
 <a href="..." data-hotkey="Alt+2" title="Go to an example link 2">link 2</a>
 ```
 
+You can then use `window.webHotkeys` for further customisations.
+
 ```javascript
-new WebHotkeys()
+const wh = window.webHotkeys
+wh.setOptions({"onToggle": ()=>{...}})
+wh.grab(...)
 ```
 
-### Constructor options
+### Custom mode
 
-You can pass an object to specify the options:
+Removing the register parameter forces you to create the `new WebHotkeys` yourself.
+
+The constructors accepts the following options object.
+
 
 | Property             | Type    | Default | Description                                                                       |
 |----------------------|---------|---------|-----------------------------------------------------------------------------------|
@@ -65,10 +74,21 @@ You can pass an object to specify the options:
 | selector             | string  | `data-hotkey` | Attribute name to link DOM elements to shorcuts.      |
 | selectorGroup        | string  | `data-hotkey-group` |  Attribute name to link DOM elements to shorcut groups. |
 
+Should you need to change a one-time variable like `grabF1`, you want to prevent the implicit `new WebHotkeys` creation. Then, create the object manually:
+
+```javascript
+const wh = new WebHotkeys({"grabF1": false})
+```
+
+### Method `setOptions`
+*return self*
+
+Takes the same options object as the constructor. Allows dynamic options change.
 
 ### Method `grab`
+*return [Hotkey](#Hotkey-object)*
 
-Start listening to a hotkey. Specify hint and callback to be triggered on hit. Returns a `Hotkey` object. It accepts following parameters:
+Start listening to a hotkey. Specify hint and callback to be triggered on hit. Returns a [`Hotkey`](#Hotkey-object) object. It accepts following parameters:
 
 * `hotkey` (`string`)
     Key combination to be grabbed. Either use any `code` value https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values of the event:
@@ -90,16 +110,17 @@ Start listening to a hotkey. Specify hint and callback to be triggered on hit. R
 
     If you define both `code` and `key`, the `code` takes precedence, and then the last one defined takes precedence.
 
-    If multiple hotkeys are defined, only one is executed. We skip hotkeys that are not in the correct scope or whoise underlying element is disabled.
+    If multiple hotkeys are defined, only the last one defined is executed (unless it returns `false`, in which case the next one is tried). We skip hotkeys that are not in the correct scope or whoise underlying element is disabled.
+
+    Possible modifiers are: `Alt`, `Shift`, `Ctrl` (`Control`).
 
     "We attempt to determine whether the hotkey should not be triggered. Such as triggering hotkeys like `a` or `Delete` in an `<input>` contents, which makes no sense, but `F2` does.
 
     Some special hotkeys like `Ctrl+PageDown` will likely never be passed to the webpage and therefore do not function.
 * `hintOrAction` (`string|HTMLElement|Function`): Either hint text or an action (if the action parameter stays undefined).
-* `callback` (`{string|HTMLElement|Function}`): What will happen on hotkey trigger.
-     *  If callback returns false, hotkey will be treated as non-existent and event will propagate further.
-     *  If action is a HTMLElement or its string selector, its click or focus method (form elements) is taken instead.
-     *  If callback is jQuery, its click method is taken instead.
+* `action` (`{string|HTMLElement|Function}`): What will happen on hotkey trigger.
+     *  If action returns false, hotkey will be treated as non-existent and event will propagate further.
+     *  If action is a HTMLElement or its string selector, its click or focus method (form elements) is invoked instead.
 * `scope` (`{HTMLElement|Function|jQuery}`): Scope within the hotkey is allowed to be launched.
      *  The scope can be an HTMLElement that the active element is being search under when the hotkey triggers.
      *  The scope can an HTMLElement selector, does not have to exist at the shorcut definition time.
@@ -107,6 +128,8 @@ Start listening to a hotkey. Specify hint and callback to be triggered on hit. R
      *  (Ex: down arrow should work unless there is DialogOverlay in the document root.)
 
 ### Method `group`
+*return [HotkeyGroup](#HotkeyGroup-object)*
+
 Grab multiple hotkeys at once. Returns a `HotkeyGroup` that you may call methods `enable`, `disable`, `toggle(enable=null)` on.
 
 ```javascript
@@ -121,7 +144,7 @@ general.toggle() // re-enable them
 general.toggle(false) // re-disable them
 ```
 
-Alternatively, you can set the group in the DOM. Either on the element or on any of its ancestors:
+Alternatively, you can set the group in the DOM. If not changed by `selectorGroup`), use the `[data-hotkey-group]` attribute either on the element or on any of its ancestors:
 
 ```html
 <a href="..." data-hotkey="Alt+1" data-hotkey-group="Global shortcuts" title="Go to an example link 1">link 1</a>
@@ -154,13 +177,47 @@ Display hints.
 
 ## `Hotkey` object
 
-### Method `enabled`
+### Method `enable`
+*return this*
 
-Start listening (by default after calling `wh.grab`). Returns itself.
+Start listening (by default after calling `window.webHotkeys.grab`).
 
 ### Method `disable`
+*return this*
 
-Stop listening. Returns itself.
+Stop listening. Alternatively, you may [disable](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSelectElement/disabled) the linked HTMLElement.
+
+### Method `toggle`
+*return this*
+
+Enable or disable. Accepts parameter `enable = null` to by set directly.
+
+### Method `getClue`
+*return string*
+
+Get hotkey combination for the text representation.
+
+### Method `getText`
+*return string*
+
+Get text representation.
+
+## `HotkeyGroup` object
+
+### Method `enable`
+*return this*
+
+Enable all hotkeys in the group.
+
+### Method `disable`
+*return this*
+
+Disable all hotkeys in the group.
+
+### Method `toggle`
+*return this*
+
+Enable or disable all hotkeys in the group. Accepts parameter `enable = null` to by set directly.
 
 ### Migrate from 0.7 to 0.8
 (Remove the paragraph.)

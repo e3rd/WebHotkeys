@@ -63,7 +63,7 @@ class Hotkey {
             }
             const opt = wh.options
             if (opt.hint && !el.webhotkeys_displayed) {
-                const hint = this.getCanonic(true)
+                const hint = this.getClue(true)
                 if (opt.hint === "title") {
                     el.title += hint
                 }
@@ -82,16 +82,21 @@ class Hotkey {
     }
 
     /**
-    * Generate hotkey combination as text
+    * Get hotkey combination for the text representation.
     * @returns {string}
     */
-    getCanonic(append_parenthesis = false) {
+    getClue(append_parenthesis = false) {
         const pre = (this.event.ctrlKey ? "Ctrl+" : "") + (this.event.shiftKey ? "Shift+" : "") + (this.event.altKey ? "Alt+" : "")
         const key = this.event.key || this.event.code.replace(/^Digit(\d)$/, "$1") // 'Alt+Digit1' -> 'Alt+1'
         if (append_parenthesis) {
             return ` (${pre + key})`
         }
         return pre + key
+    }
+
+    /** Get text representation. */
+    getText() {
+        return `${this.getClue()}: ${this.hint}`
     }
 
     /**
@@ -168,15 +173,13 @@ class HotkeyGroup extends Array {
  * Main interface to define hotkeys
  */
 class WebHotkeys {
+
     /**
      * @param {WebHotkeysDefaults} options
      */
     constructor(options) {
-        //
-        // Definitions
-        //
+        /** @type {WebHotkeysDefaults} */
         options = this.options = { ...WebHotkeysDefaults, ...options }
-
         /**  @type {Object.<KeyState, Hotkey[]>} */
         this._hotkeys = {}
         /** @type {WeakMap.<HTMLElement, Hotkey>} Links DOM elements to its shorcuts. */
@@ -199,7 +202,6 @@ class WebHotkeys {
         // the hotkey through the this._dom, it would be regrabbed and strange bugs would be produced. (Ex: double onToggle callback.)
         // const grab = el => !this._dom.has(el)&& this._dom.set(el, this.grab(el.getAttribute(options.selector), el.getAttribute("title"), el))
         const grab = el => !this._dom.has(el) && this.grab(el.getAttribute(options.selector), el.getAttribute("title"), el)
-
 
         //
         // Process options
@@ -247,6 +249,14 @@ class WebHotkeys {
     }
 
     /**
+     * @param {WebHotkeysDefaults} options
+     */
+    setOptions(options) {
+        this.options = { ...this.options, ...options }
+        return this
+    }
+
+    /**
      * XX if there are a lot of them, they are not displayed in the alert text
      * @returns {string} Help text to current hotkeys' map.
      */
@@ -261,7 +271,7 @@ class WebHotkeys {
                 .filter(hotkey => enabled.has(hotkey)) // filter out disabled hotkeys
                 .map(hotkey => {
                     seen.add(hotkey)
-                    return `${hotkey.getCanonic()}: ${hotkey.hint}`
+                    return hotkey.getText()
                 })
             if (list.length) { // if at least one hotkey from a group remains enabled
                 return `\n**${name}**\n` + list.join("\n")
@@ -270,7 +280,7 @@ class WebHotkeys {
 
         const ungrouped = all
             .filter(hotkey => !seen.has(hotkey))
-            .map(hotkey => hotkey.getCanonic() + ": " + hotkey.hint)
+            .map(hotkey => hotkey.getClue() + ": " + hotkey.hint)
 
         return [...ungrouped, ...grouped].join("\n").trim()
     }
@@ -282,7 +292,7 @@ class WebHotkeys {
      * @param {string|Action} hintOrAction Either hint text or an action (if the action parameter stays undefined).
      * @param {Action} action  What will happen on hotkey trigger.
      *   If action returns false, hotkey will be treated as non-existent and event will propagate further.
-     *   If action is a HTMLElement or its string selector, its click or focus method (form elements) is taken instead.
+     *   If action is a HTMLElement or its string selector, its click or focus method (form elements) is invoked instead.
      * @param {?Action} scope Scope within the hotkey is allowed to be launched.
      *  The scope can be an HTMLElement that the active element is being search under when the hotkey triggers.
      *  The scope can an HTMLElement selector, does not have to exist at the shorcut definition time.
@@ -360,7 +370,7 @@ class WebHotkeys {
             parts.splice(parts.length - 2, 2, '+') // `Alt++` -> ["Alt", "", ""] -> ["Alt", "+"]
         }
         const key = parts.pop() // the last element is the actual key, ex: Shift+Digit1 -> Digit1
-        const event = { [key.length > 1 ? "key" : "code"]: key } // {"key": "KeyF"} | {"code": "f"}
+        const event = { [key.length === 1 ? "key" : "code"]: key } // {"key": "f"} | {"code": "KeyF"}
 
         parts.forEach(part => {
             const modifier = modifiers[part.toLowerCase()]
@@ -422,8 +432,10 @@ class WebHotkeys {
                 // or a text editing key that cannot take use of Ctrl (Enter is text editing, Ctrl+Enter is not)
                 || ["Tab", "Enter"].includes(e.key) && !e.ctrlKey
             )
-            && FORM_TAGS.includes(document.activeElement.tagName)
-            && document.activeElement.type !== "checkbox") {
+            // We are in a text editing context. Either a form tag like INPUT or within an editable element.
+            && (FORM_TAGS.includes(document.activeElement.tagName) && document.activeElement.type !== "checkbox"
+                || document.activeElement.contentEditable === "true")
+        ) {
             return
         }
 
@@ -450,16 +462,19 @@ class WebHotkeys {
                 if (element.disabled) {
                     continue // action is a disabled HTMLElement, continue to next shorcut
                 }
-                result = FORM_TAGS.includes(element.tagName) ? element.focus() : element.click()
+                // note that result is always none
+                FORM_TAGS.includes(element.tagName) ? element.focus() : element.click()
             } else {
                 result = action.call(this)
             }
 
-            if (result !== false) {// custom method suceeded
-                // prevent default behaviour (ex: Ctrl+L going to the address bar)
-                e.stopPropagation?.() // the method may not be available in a crafted event
-                e.preventDefault?.()
+            if (result === false) {
+                continue // custom method failed, try next hotkey
             }
+
+            // prevent default behaviour (ex: Ctrl+L going to the address bar)
+            e.stopPropagation?.() // the method may not be available in a crafted event
+            e.preventDefault?.()
             return
         }
     }
@@ -655,18 +670,18 @@ class _List {
     }
 
     _change(newEl, oldEl) {
-        let proceed = true;
+        let proceed = true
         if (typeof this.method === "function") {
-            proceed = this.method(newEl, oldEl);
+            proceed = this.method(newEl, oldEl)
         }
         if (proceed) {
             if (this.currentSelector.substr(0, 1) === ".") {
                 let cl = this.currentSelector.substr(1)
                 if (oldEl) {
-                    oldEl.classList.remove(cl);
+                    oldEl.classList.remove(cl)
                 }
                 if (newEl) {
-                    newEl.classList.add(cl);
+                    newEl.classList.add(cl)
                 }
             } else if (this.currentSelector.substring(0, 1) === "[") {
                 const attrName = this.currentSelector.substring(1, this.currentSelector.length - 1)
@@ -679,7 +694,7 @@ class _List {
             } else if (this.currentSelector.indexOf(":focus") === 0) {
                 newEl.focus();
             } else { //selector can be I.E. a data-attribute
-                console.error("WebHotkeys.js> Don't know how to process selector type:", this.currentSelector);
+                console.error("WebHotkeys.js> Don't know how to process selector type:", this.currentSelector)
                 return false;
             }
             this.selected = newEl;
@@ -687,7 +702,7 @@ class _List {
                 this._callback(newEl)
             }
         }
-        return true;
+        return true
     }
 }
 
@@ -697,4 +712,11 @@ class _List {
 
 function isString(t) {
     return typeof t === 'string' || t instanceof String
+}
+
+//
+// Public
+//
+if (new URL(document.currentScript.src).searchParams.has("register")) {
+    window.webHotkeys = new WebHotkeys()
 }
