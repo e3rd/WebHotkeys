@@ -233,8 +233,14 @@ class WebHotkeys {
                             grab(el)
                         }
                     } else if (mutation.type === "childList") {
-                        Array.from(mutation.addedNodes).filter(eligible).forEach(grab)
-                        Array.from(mutation.removedNodes).filter(eligible).forEach(el => this._dom.get(el).disable() && this._dom.delete(el))
+                        // Grab all the added nodes and their subtrees
+                        [...Array.from(mutation.addedNodes).filter(eligible),
+                        ...Array.from(mutation.addedNodes).map(el => Array.from(el.querySelectorAll?.(`[${options.selector}]`) || [])).flat()
+                        ].forEach(grab); // ; needed
+                        // Ungrab all the added nodes and their subtrees
+                        [...Array.from(mutation.removedNodes).filter(eligible),
+                        ...Array.from(mutation.removedNodes).map(el => Array.from(el.querySelectorAll?.(`[${options.selector}]`) || [])).flat()]
+                            .forEach(el => this._dom.get(el).disable() && this._dom.delete(el))
                     }
 
                 }
@@ -717,6 +723,6 @@ function isString(t) {
 //
 // Public
 //
-if (new URL(document.currentScript.src).searchParams.has("register")) {
+if (document.currentScript && new URL(document.currentScript.src).searchParams.has("register")) { // currentScript is unavailable in i.e. a content script
     window.webHotkeys = new WebHotkeys()
 }
